@@ -1,0 +1,11 @@
+{
+	"scripts": {
+		"init": "npm install bga-ts-template && npx bga-init DevilsDice \"Brook Elf Nichols brookelfnichols@gmail.com\" source --typescript --scss --vscode-extension-pack --gameinfos.jsonc --gameoptions.jsonc --gamepreferences.jsonc --stats.jsonc --gamestates.jsonc",
+		"build": "npx bga-build",
+		"watch": "npx bga-build --watch"
+	},
+	"dependencies": {
+		"bga-ts-template": "^2.0.6",
+		"typescript": "^5.8.3"
+	}
+}
