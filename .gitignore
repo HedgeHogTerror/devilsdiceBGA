@@ -1,0 +1,6 @@
+/.vscode
+/.phpunit.cache
+/mygamename.css
+/mygamename.js
+/mygamename.js.map
+*.DS_Store
