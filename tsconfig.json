@@ -1,0 +1,35 @@
+{
+  "rootDir": ".",
+
+  "compilerOptions": {
+    /* Visit https://aka.ms/tsconfig to read more about this file */
+
+    /* Language and Environment */
+    "target": "ES5",                                 /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
+    "lib": ["DOM", "ESNext"],
+
+    /* Modules */
+    "module": "AMD",                                 /* Specify what module code is generated. */
+    "moduleResolution": "node10",                      /* Specify how TypeScript looks up a file from a given module specifier. */
+
+
+    // Source Map
+    "sourceMap": false,                               /* enables the use of source maps for debuggers and error reporting etc */
+
+    /* Emit */
+    "outFile": "devilsdice.js",                           /* Specify a file that bundles all outputs into one JavaScript file. If 'declaration' is true, also designates a file that bundles all .d.ts output. */
+
+    /* Interop Constraints */
+    "forceConsistentCasingInFileNames": true,        /* Ensure that casing is correct in imports. */
+
+    /* Type Checking */
+    "strict": true,                                  /* Enable all strict type-checking options. */
+    "exactOptionalPropertyTypes": true,              /* Interpret optional property types as written, rather than adding 'undefined'. */
+    "noUncheckedIndexedAccess": true,                /* Add 'undefined' to a type when accessed using an index. */
+    "noPropertyAccessFromIndexSignature": true,      /* Enforces using indexed accessors for keys declared using an indexed type. */
+    "noImplicitReturns": true,                       /* Enable error reporting for codepaths that do not explicitly return in a function. */
+    "noImplicitOverride": true,                      /* Ensure overriding members in derived classes are marked with an override modifier. */
+  },
+
+  "include": ["src/typescript/**/*.ts"]
+}
