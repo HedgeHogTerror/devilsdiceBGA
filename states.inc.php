@@ -18,7 +18,11 @@ declare(strict_types=1);
  */
 if (false) {
 	/** @var devilsdice $game */
-	
+	$game->stChallengeWindow();
+	$game->stResolveChallenge();
+	$game->stResolveAction();
+	$game->stCheckWin();
+	$game->stRolloff();
 }
 
 $machinestates = array(
@@ -28,18 +32,83 @@ $machinestates = array(
 		'type' => 'manager',
 		'action' => 'stGameSetup',
 		'transitions' => array(
-			'' => 2,
+			'playerTurn' => 2,
 		),
 	),
 	2 => array(
-		'name' => 'dummmy',
-		'description' => clienttranslate('${actplayer} must play a card or pass'),
-		'descriptionmyturn' => clienttranslate('${you} must play a card or pass'),
+		'name' => 'playerTurn',
+		'description' => clienttranslate('${actplayer} must choose an action'),
+		'descriptionmyturn' => clienttranslate('${you} must choose an action'),
 		'type' => 'activeplayer',
-		'possibleactions' => ['playCard', 'pass'],
+		'possibleactions' => ['raiseHell', 'harvestSkulls', 'extort', 'reapSoul', 'pentagram', 'impsSet', 'satansSteal'],
 		'transitions' => array(
-			'playCard' => 2,
-			'pass' => 2,
+			'challengeWindow' => 3,
+			'resolveAction' => 5,
+			'endGame' => 99,
+		),
+	),
+	3 => array(
+		'name' => 'challengeWindow',
+		'description' => clienttranslate('Players may challenge ${actplayer}'s claim'),
+		'type' => 'multipleactiveplayer',
+		'action' => 'stChallengeWindow',
+		'descriptionmyturn' => clienttranslate('Other players may challenge your claim'),
+		'possibleactions' => ['challenge', 'pass'],
+		'transitions' => array(
+			'resolveChallenge' => 4,
+			'blockWindow' => 6,
+			'resolveAction' => 5,
+		),
+	),
+	4 => array(
+		'name' => 'resolveChallenge',
+		'description' => '',
+		'type' => 'game',
+		'action' => 'stResolveChallenge',
+		'transitions' => array(
+			'playerTurn' => 2,
+			'blockWindow' => 6,
+			'resolveAction' => 5,
+		),
+	),
+	5 => array(
+		'name' => 'resolveAction',
+		'description' => '',
+		'type' => 'game',
+		'action' => 'stResolveAction',
+		'transitions' => array(
+			'checkWin' => 7,
+		),
+	),
+	6 => array(
+		'name' => 'blockWindow',
+		'description' => clienttranslate('${target_player} may block this action'),
+		'type' => 'activeplayer',
+		'descriptionmyturn' => clienttranslate('${you} may block this action'),
+		'possibleactions' => ['block', 'pass'],
+		'transitions' => array(
+			'challengeBlock' => 3,
+			'resolveAction' => 5,
+		),
+	),
+	7 => array(
+		'name' => 'checkWin',
+		'description' => '',
+		'type' => 'game',
+		'action' => 'stCheckWin',
+		'transitions' => array(
+			'rolloff' => 8,
+			'playerTurn' => 2,
+			'endGame' => 99,
+		),
+	),
+	8 => array(
+		'name' => 'rolloff',
+		'description' => clienttranslate('Rolloff between tied players'),
+		'type' => 'game',
+		'action' => 'stRolloff',
+		'transitions' => array(
+			'endGame' => 99,
 		),
 	),
 	99 => array(

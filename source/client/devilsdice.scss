@@ -1,42 +1,307 @@
-/*
- *------
- * BGA framework: Gregory Isabelli & Emmanuel Colin & BoardGameArena
- * DevilsDice implementation : © Brook Elf Nichols brookelfnichols@gmail.com
- *
- * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
- * See http://en.boardgamearena.com/#!doc/Studio for more information.
- * -----
- */
+/* Devil's Dice CSS */
 
-/*
-	This is the CSS stylesheet of your game User Interface.
-	
-	Styles defined on this file will be applied to the HTML elements you define in your
-	HTML template (*.tpl), and to HTML elements you create dynamically (in devilsdice.js).
-	
-	Usually, you are using CSS to:
-	
-	1°) define the overall layout of your game (ex: place the board on the top left, place player's hand beside, place the deck on the right, ...).
+#board {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
 
-	2°) create your CSS-sprites: All images of your games should be gathered into a small number of image files. Then, using background-image and background-position CSS properties, you create HTML blocks that can  display these images correctly (see example below).
-	
-	3°) ... anything else: It is really easy to add and remove CSS classes dynamically from your Javascript with dojo.addClass and dojo.removeClass. It is also easy to check if an element has a class (dojo.hasClass) or to get all elements with a specific class (dojo.query). This is why, very often, using CSS classes for the logic of your user interface allow you to do complex thing easily.
-*/
+#players-area {
+    background: #f5f5f5;
+    border-radius: 8px;
+    padding: 15px;
 
-/*
-	Example of CSS sprites (a black token and a white token, 20x20px each, embedded in the same "tokens.png" 40x20px image):
+    h3 {
+        margin-top: 0;
+        color: #333;
+    }
+}
 
-	.white_token {
-		background-image: url('img/tokens.png');
-		background-position: 0px 0px;
-	}
-	.black_token {
-		background-image: url('img/tokens.png');
-		background-position: -20px 0px;
-	}
-	.token {
-		width: 20px;
-		height: 20px;
-		background-repeat: none;
-	}
-*/
+#players-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.player-info {
+    background: white;
+    border-radius: 6px;
+    padding: 10px 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .player-name {
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+    .skull-tokens,
+    .dice-count {
+        background: #eee;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+
+    .target-btn {
+        background: #4a90e2;
+        color: white;
+        border: none;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+
+        &:hover {
+            background: #357abd;
+        }
+    }
+
+    &.current-player {
+        border: 2px solid #4a90e2;
+        background: #e8f4fd;
+    }
+}
+
+#my-dice-area {
+    background: #e8f4fd;
+    border-radius: 8px;
+    padding: 15px;
+    border: 2px solid #4a90e2;
+
+    h3 {
+        margin-top: 0;
+        color: #2c5aa0;
+    }
+}
+
+#my-dice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+#satans-pool-area {
+    background: #fde8e8;
+    border-radius: 8px;
+    padding: 15px;
+    border: 2px solid #e74c3c;
+
+    h3 {
+        margin-top: 0;
+        color: #c0392b;
+    }
+}
+
+#satans-pool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.die {
+    width: 60px;
+    height: 60px;
+    background: white;
+    border: 2px solid #333;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    transition: transform 0.1s;
+
+    &:hover {
+        transform: scale(1.05);
+    }
+
+    &[data-face='flame'] {
+        background: #ff6b6b;
+        color: white;
+    }
+
+    &[data-face='pentagram'] {
+        background: #4ecdc4;
+        color: white;
+    }
+
+    &[data-face='scythe'] {
+        background: #45b7d1;
+        color: white;
+    }
+
+    &[data-face='trident'] {
+        background: #f9ca24;
+        color: #333;
+    }
+
+    &[data-face='skull'] {
+        background: #6c5ce7;
+        color: white;
+    }
+
+    &[data-face='imp'] {
+        background: #fd79a8;
+        color: white;
+    }
+}
+
+.pool-die {
+    border-color: #e74c3c;
+}
+
+#game-status {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+
+    #challenge-prompt,
+    #block-prompt {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 4px;
+        padding: 10px;
+        margin-top: 10px;
+        color: #856404;
+        font-weight: bold;
+    }
+
+    #block-prompt {
+        background: #f8d7da;
+        border-color: #f5c6cb;
+        color: #721c24;
+    }
+}
+
+/* Action buttons styling */
+.bgabutton {
+    margin: 5px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: bold;
+
+    &.bgabutton_blue {
+        background: #4a90e2;
+        border-color: #357abd;
+    }
+
+    &.bgabutton_red {
+        background: #e74c3c;
+        border-color: #c0392b;
+    }
+
+    &.bgabutton_gray {
+        background: #95a5a6;
+        border-color: #7f8c8d;
+    }
+}
+
+/* State-based styling */
+.state-challengeWindow {
+    #board {
+        border: 3px solid #f39c12;
+        background: rgba(243, 156, 18, 0.1);
+    }
+}
+
+.state-blockWindow {
+    #board {
+        border: 3px solid #e74c3c;
+        background: rgba(231, 76, 60, 0.1);
+    }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    #board {
+        padding: 10px;
+    }
+
+    #players-info {
+        flex-direction: column;
+    }
+
+    .die {
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+    }
+}
+
+/* Animations */
+@keyframes diceRoll {
+    0% {
+        transform: rotate(0deg) scale(1);
+    }
+    50% {
+        transform: rotate(180deg) scale(1.2);
+    }
+    100% {
+        transform: rotate(360deg) scale(1);
+    }
+}
+
+.die.rolling {
+    animation: diceRoll 0.5s ease-in-out;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.die.highlighted {
+    animation: pulse 1s infinite;
+    border-color: #f39c12;
+    box-shadow: 0 0 10px rgba(243, 156, 18, 0.5);
+}
+
+/* Game progression indicator */
+.game-progress {
+    background: #fff;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #eee;
+        border-radius: 4px;
+        overflow: hidden;
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4a90e2, #357abd);
+            transition: width 0.3s ease;
+        }
+    }
+
+    .progress-text {
+        font-size: 12px;
+        color: #666;
+        margin-top: 5px;
+        text-align: center;
+    }
+}
+
+.satan-image {
+    max-width: 100%; /* Adjust size as needed */
+    display: block;
+    margin: 0 auto 15px;
+}

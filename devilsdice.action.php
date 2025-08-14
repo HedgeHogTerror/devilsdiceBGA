@@ -27,14 +27,80 @@ class action_devilsdice extends APP_GameAction
 		}
 	}
 
-	public function playCard()
+	public function raiseHell()
 	{
 		self::setAjaxMode();
 
-		/** @var int $card_id */
-		$card_id = self::getArg('card_id', AT_int, true);
+		$this->game->raiseHell(  );
+		self::ajaxResponse();
+	}
 
-		$this->game->playCard( $card_id );
+	public function harvestSkulls()
+	{
+		self::setAjaxMode();
+
+		$this->game->harvestSkulls(  );
+		self::ajaxResponse();
+	}
+
+	public function extort()
+	{
+		self::setAjaxMode();
+
+		/** @var int $targetPlayerId */
+		$targetPlayerId = self::getArg('targetPlayerId', AT_int, true);
+
+		$this->game->extort( $targetPlayerId );
+		self::ajaxResponse();
+	}
+
+	public function reapSoul()
+	{
+		self::setAjaxMode();
+
+		/** @var int $targetPlayerId */
+		$targetPlayerId = self::getArg('targetPlayerId', AT_int, true);
+
+		$this->game->reapSoul( $targetPlayerId );
+		self::ajaxResponse();
+	}
+
+	public function pentagram()
+	{
+		self::setAjaxMode();
+
+		$this->game->pentagram(  );
+		self::ajaxResponse();
+	}
+
+	public function impsSet()
+	{
+		self::setAjaxMode();
+
+		$this->game->impsSet(  );
+		self::ajaxResponse();
+	}
+
+	public function satansSteal()
+	{
+		self::setAjaxMode();
+
+		/** @var int $targetPlayerId */
+		$targetPlayerId = self::getArg('targetPlayerId', AT_int, true);
+		/** @var bool $putInPool */
+		$putInPool = self::getArg('putInPool', AT_bool, true);
+		/** @var string $poolFace */
+		$poolFace = self::getArg('poolFace', AT_alphanum, true);
+
+		$this->game->satansSteal( $targetPlayerId, $putInPool, $poolFace );
+		self::ajaxResponse();
+	}
+
+	public function challenge()
+	{
+		self::setAjaxMode();
+
+		$this->game->challenge(  );
 		self::ajaxResponse();
 	}
 
@@ -43,6 +109,14 @@ class action_devilsdice extends APP_GameAction
 		self::setAjaxMode();
 
 		$this->game->pass(  );
+		self::ajaxResponse();
+	}
+
+	public function block()
+	{
+		self::setAjaxMode();
+
+		$this->game->block(  );
 		self::ajaxResponse();
 	}
 }

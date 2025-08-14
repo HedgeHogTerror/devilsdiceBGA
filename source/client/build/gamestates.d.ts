@@ -18,18 +18,83 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'type': 'manager',
 		'action': 'stGameSetup',
 		'transitions': {
-			'': 2,
+			'playerTurn': 2,
 		},
 	},
 	2: {
-		'name': 'dummmy',
-		'description': '${actplayer} must play a card or pass',
-		'descriptionmyturn': '${you} must play a card or pass',
+		'name': 'playerTurn',
+		'description': '${actplayer} must choose an action',
+		'descriptionmyturn': '${you} must choose an action',
 		'type': 'activeplayer',
-		'possibleactions': ['playCard', 'pass'],
+		'possibleactions': ['raiseHell', 'harvestSkulls', 'extort', 'reapSoul', 'pentagram', 'impsSet', 'satansSteal'],
 		'transitions': {
-			'playCard': 2,
-			'pass': 2,
+			'challengeWindow': 3,
+			'resolveAction': 5,
+			'endGame': 99,
+		},
+	},
+	3: {
+		'name': 'challengeWindow',
+		'description': 'Players may challenge ${actplayer}\'s claim',
+		'type': 'multipleactiveplayer',
+		'action': 'stChallengeWindow',
+		'descriptionmyturn': 'Other players may challenge your claim',
+		'possibleactions': ['challenge', 'pass'],
+		'transitions': {
+			'resolveChallenge': 4,
+			'blockWindow': 6,
+			'resolveAction': 5,
+		},
+	},
+	4: {
+		'name': 'resolveChallenge',
+		'description': '',
+		'type': 'game',
+		'action': 'stResolveChallenge',
+		'transitions': {
+			'playerTurn': 2,
+			'blockWindow': 6,
+			'resolveAction': 5,
+		},
+	},
+	5: {
+		'name': 'resolveAction',
+		'description': '',
+		'type': 'game',
+		'action': 'stResolveAction',
+		'transitions': {
+			'checkWin': 7,
+		},
+	},
+	6: {
+		'name': 'blockWindow',
+		'description': '${target_player} may block this action',
+		'type': 'activeplayer',
+		'descriptionmyturn': '${you} may block this action',
+		'possibleactions': ['block', 'pass'],
+		'transitions': {
+			'challengeBlock': 3,
+			'resolveAction': 5,
+		},
+	},
+	7: {
+		'name': 'checkWin',
+		'description': '',
+		'type': 'game',
+		'action': 'stCheckWin',
+		'transitions': {
+			'rolloff': 8,
+			'playerTurn': 2,
+			'endGame': 99,
+		},
+	},
+	8: {
+		'name': 'rolloff',
+		'description': 'Rolloff between tied players',
+		'type': 'game',
+		'action': 'stRolloff',
+		'transitions': {
+			'endGame': 99,
 		},
 	},
 	99: {
@@ -44,10 +109,24 @@ interface DefinedGameStates extends ValidateGameStates<{
 interface GameStateArgs {}
 
 interface GameStatePossibleActions {
-	'playCard': {
-		'card_id': number,
+	'raiseHell': {},
+	'harvestSkulls': {},
+	'extort': {
+		'targetPlayerId': number,
 	},
+	'reapSoul': {
+		'targetPlayerId': number,
+	},
+	'pentagram': {},
+	'impsSet': {},
+	'satansSteal': {
+		'targetPlayerId': number,
+		'putInPool': boolean,
+		'poolFace': string,
+	},
+	'challenge': {},
 	'pass': {},
+	'block': {},
 }
 
 }

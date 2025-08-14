@@ -1,5 +1,7 @@
 <?php
 
+namespace Bga\Games\DevilsDice;
+
 class States {
     const START = 1;
     const END = 99;

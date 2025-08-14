@@ -23,43 +23,116 @@
 		"description": "",
 		"type": "manager",
 		"action": "stGameSetup",
-		"transitions": { "": 2 }
+		"transitions": { "playerTurn": 2 }
 	},
 
-	// Note: ID=2: your first state. If not, change the transition in the gameSetup above.
+	// Player turn - choose an action
 	"2": {
-		"name": "dummmy",
-		"description": "${actplayer} must play a card or pass",
-		"descriptionmyturn": "${you} must play a card or pass",
+		"name": "playerTurn",
+		"description": "${actplayer} must choose an action",
+		"descriptionmyturn": "${you} must choose an action",
 		"type": "activeplayer",
 		"possibleactions": {
-			"playCard": [{ "name": "card_id", "type": "AT_int" }],
+			"raiseHell": [],
+			"harvestSkulls": [],
+			"extort": [{ "name": "targetPlayerId", "type": "AT_int" }],
+			"reapSoul": [{ "name": "targetPlayerId", "type": "AT_int" }],
+			"pentagram": [],
+			"impsSet": [],
+			"satansSteal": [
+				{ "name": "targetPlayerId", "type": "AT_int" },
+				{ "name": "putInPool", "type": "AT_bool", "default": false },
+				{ "name": "poolFace", "type": "AT_alphanum", "default": null }
+			]
+		},
+		"transitions": { 
+			"challengeWindow": 3, 
+			"resolveAction": 5,
+			"endGame": 99 
+		}
+	},
+
+	// Challenge window - players may challenge the action
+	"3": {
+		"name": "challengeWindow",
+		"description": "Players may challenge ${actplayer}'s claim",
+		"type": "multipleactiveplayer",
+		"action": "stChallengeWindow",
+		"descriptionmyturn": "Other players may challenge your claim",
+		"possibleactions": {
+			"challenge": [],
 			"pass": []
 		},
-		"transitions": { "playCard": 2, "pass": 2 }
+		"transitions": { 
+			"resolveChallenge": 4,
+			"blockWindow": 6,
+			"resolveAction": 5
+		}
 	},
 
-/*
-	// Examples:
-	
-	"2": {
-		"name": "nextPlayer",
+	// Resolve challenge
+	"4": {
+		"name": "resolveChallenge",
 		"description": "",
 		"type": "game",
-		"action": "stNextPlayer",
-		"updateGameProgression": true,
-		"transitions": { "endGame": 99, "nextPlayer": 10 }
+		"action": "stResolveChallenge",
+		"transitions": { 
+			"playerTurn": 2,
+			"blockWindow": 6,
+			"resolveAction": 5
+		}
 	},
 
-	"10": {
-		"name": "playerTurn",
-		"description": "${actplayer} must play a card or pass",
-		"descriptionmyturn": "${you} must play a card or pass",
-		"type": "activeplayer",
-		"possibleactions": [ "playCard", "pass" ],
-		"transitions": { "playCard": 2, "pass": 2 }
+	// Resolve action
+	"5": {
+		"name": "resolveAction",
+		"description": "",
+		"type": "game",
+		"action": "stResolveAction",
+		"transitions": { 
+			"checkWin": 7
+		}
 	},
-*/
+
+	// Block window - target player may block
+	"6": {
+		"name": "blockWindow",
+		"description": "${target_player} may block this action",
+		"type": "activeplayer",
+		"descriptionmyturn" : "${you} may block this action",
+		"possibleactions": {
+			"block": [],
+			"pass": []
+		},
+		"transitions": { 
+			"challengeBlock": 3,
+			"resolveAction": 5
+		}
+	},
+
+	// Check for win condition
+	"7": {
+		"name": "checkWin",
+		"description": "",
+		"type": "game",
+		"action": "stCheckWin",
+		"transitions": { 
+			"rolloff": 8,
+			"playerTurn": 2,
+			"endGame": 99
+		}
+	},
+
+	// Rolloff for tied players
+	"8": {
+		"name": "rolloff",
+		"description": "Rolloff between tied players",
+		"type": "game",
+		"action": "stRolloff",
+		"transitions": { 
+			"endGame": 99
+		}
+	},
 
 	// Final state.
 	// Please do not modify (and do not overload action/args methods}.

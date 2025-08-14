@@ -26,6 +26,7 @@ namespace Bga\Games\DevilsDice;
 
 require_once(APP_GAMEMODULE_PATH . "module/table/table.game.php");
 require_once("autoload.php");
+require_once("Constants.inc.php");
 
 class Game extends \Table {
     /**
@@ -220,16 +221,26 @@ class Game extends \Table {
      */
 
     public function stGameSetup() {
+        $this->debug("DevilsDice: Starting game setup");
+
         // Initialize player tokens first
         $players = $this->loadPlayersBasicInfos();
+        $this->debug("DevilsDice: Found " . count($players) . " players");
+
         foreach ($players as $playerId => $player) {
             $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, 1)");
+            $this->debug("DevilsDice: Created tokens for player $playerId");
         }
 
-        // Then give each player 2 starting dice
+        // Then give each player 2 starting dice with full notification
         foreach ($players as $playerId => $player) {
-            $this->rollDiceForPlayer($playerId, 2);
+            $this->debug("DevilsDice: Rolling dice for player $playerId");
+            $this->rollDiceForPlayer($playerId, 2, true); // true = notify all players
         }
+
+        // Send a final notification to refresh all game data
+        $this->notifyAllPlayers('gameSetupComplete', '', []);
+        $this->debug("DevilsDice: Game setup completed");
 
         $this->gamestate->nextState('playerTurn');
     }
@@ -388,17 +399,36 @@ class Game extends \Table {
      * Helper methods
      */
 
-    private function rollDiceForPlayer($playerId, $count) {
+    private function rollDiceForPlayer($playerId, $count, $notifyAll = false) {
         $faces = DiceFaces::getAllFaces();
+        $this->debug("DevilsDice rollDiceForPlayer: Creating $count dice for player $playerId");
 
         for ($i = 0; $i < $count; $i++) {
             $randomFace = $faces[array_rand($faces)];
-            $this->DbQuery("INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')");
+            $query = "INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')";
+            $this->debug("DevilsDice rollDiceForPlayer: Executing query: $query");
+            $this->DbQuery($query);
         }
 
+        // Verify dice were created
+        $actualCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+        $this->debug("DevilsDice rollDiceForPlayer: Player $playerId now has $actualCount dice");
+
+        // Always notify the individual player about their specific dice
+        $playerDice = $this->getPlayerDice($playerId);
+        $this->debug("DevilsDice rollDiceForPlayer: Player dice data: " . json_encode($playerDice));
+
         $this->notifyPlayer($playerId, 'diceRolled', '', [
-            'dice' => $this->getPlayerDice($playerId)
+            'dice' => $playerDice
         ]);
+
+        // If requested, notify all players about dice count changes
+        if ($notifyAll) {
+            $this->notifyAllPlayers('diceCountUpdate', '', [
+                'playerId' => $playerId,
+                'diceCount' => $actualCount
+            ]);
+        }
     }
 
     private function getPlayerDice($playerId) {
@@ -760,6 +790,7 @@ class Game extends \Table {
 
         // WARNING: We must only return information visible by the current player.
         $currentPlayerId = intval($this->getCurrentPlayerId());
+        $this->debug("DevilsDice getAllDatas: Getting data for player $currentPlayerId");
 
         // Get information about players.
         $result['players'] = $this->getCollectionFromDb(
@@ -770,16 +801,30 @@ class Game extends \Table {
         $result['playerTokens'] = $this->getCollectionFromDb(
             "SELECT player_id, skull_tokens FROM player_tokens"
         );
+        $this->debug("DevilsDice getAllDatas: playerTokens = " . json_encode($result['playerTokens']));
 
         // Get player dice counts (public information - not the faces)
         $result['playerDiceCounts'] = $this->getCollectionFromDb(
-            "SELECT player_id, COUNT(*) as dice_count FROM player_dice WHERE location = 'hand' GROUP BY player_id"
+            "SELECT p.player_id, COALESCE(COUNT(pd.dice_id), 0) as dice_count 
+             FROM player p 
+             LEFT JOIN player_dice pd ON p.player_id = pd.player_id AND pd.location = 'hand' 
+             GROUP BY p.player_id"
         );
+        $this->debug("DevilsDice getAllDatas: playerDiceCounts = " . json_encode($result['playerDiceCounts']));
+
+        // Debug: Check if any dice exist at all
+        $totalDice = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice");
+        $this->debug("DevilsDice getAllDatas: Total dice in database = " . $totalDice);
+
+        // Debug: Check if any tokens exist
+        $totalTokens = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_tokens");
+        $this->debug("DevilsDice getAllDatas: Total token records = " . $totalTokens);
 
         // Get current player's dice (private information)
         $result['myDice'] = $this->getCollectionFromDb(
             "SELECT dice_id, face FROM player_dice WHERE player_id = $currentPlayerId AND location = 'hand'"
         );
+        $this->debug("DevilsDice getAllDatas: myDice = " . json_encode($result['myDice']));
 
         // Get Satan's pool dice (public information)
         $result['satansPool'] = $this->getCollectionFromDb(
@@ -791,6 +836,7 @@ class Game extends \Table {
         $result['currentActionPlayer'] = $this->getGameStateValue('current_action_player');
         $result['currentTargetPlayer'] = $this->getGameStateValue('current_target_player');
 
+        $this->debug("DevilsDice getAllDatas: Final result = " . json_encode($result));
         return $result;
     }
 
@@ -808,6 +854,8 @@ class Game extends \Table {
      *  according to the game rules, so that the game is ready to be played.
      */
     protected function setupNewGame($players, $options = []) {
+        $this->debug("DevilsDice: setupNewGame called with " . count($players) . " players");
+
         // Set the colors of the players with HTML color code. The default below is red/green/blue/orange/brown. The
         // number of colors defined here must correspond to the maximum number of players allowed for the gams.
         $gameinfos = $this->getGameinfos();
@@ -841,6 +889,21 @@ class Game extends \Table {
 
         $this->reloadPlayersBasicInfos();
 
+        // Initialize game-specific data (tokens and dice)
+        $this->debug("DevilsDice: Initializing game data");
+
+        // Initialize player tokens
+        foreach ($players as $playerId => $player) {
+            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, 1)");
+            $this->debug("DevilsDice: Created tokens for player $playerId");
+        }
+
+        // Give each player 2 starting dice
+        foreach ($players as $playerId => $player) {
+            $this->debug("DevilsDice: Rolling dice for player $playerId");
+            $this->rollDiceForPlayer($playerId, 2, false); // Don't notify during setup
+        }
+
         // Init global values with their initial values.
 
         // Init game statistics.
@@ -849,5 +912,7 @@ class Game extends \Table {
 
         // Activate first player once everything has been initialized and ready.
         $this->activeNextPlayer();
+
+        $this->debug("DevilsDice: setupNewGame completed");
     }
 }
