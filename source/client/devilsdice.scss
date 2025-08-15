@@ -107,8 +107,8 @@
 .die {
     width: 60px;
     height: 60px;
-    background: white;
-    border: 2px solid #333;
+    background: #000000;
+    border: 5px solid #333;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -123,32 +123,26 @@
     }
 
     &[data-face='flame'] {
-        background: #ff6b6b;
         color: white;
     }
 
     &[data-face='pentagram'] {
-        background: #4ecdc4;
         color: white;
     }
 
     &[data-face='scythe'] {
-        background: #45b7d1;
         color: white;
     }
 
     &[data-face='trident'] {
-        background: #f9ca24;
-        color: #333;
+        color: white;
     }
 
     &[data-face='skull'] {
-        background: #6c5ce7;
         color: white;
     }
 
     &[data-face='imp'] {
-        background: #fd79a8;
         color: white;
     }
 }
@@ -304,4 +298,21 @@
     max-width: 100%; /* Adjust size as needed */
     display: block;
     margin: 0 auto 15px;
+}
+
+/* SVG dice icon styling */
+.dice-icon {
+    width: 40px;
+    height: 40px;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.skull-token-icon {
+    width: 16px; /* Adjust size as needed */
+    height: 16px;
+    vertical-align: middle;
+    margin-right: 4px;
 }

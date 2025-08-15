@@ -200,18 +200,17 @@ class Game extends \Table {
 
     public function pass() {
         $this->checkAction('pass');
-        // Player passes on challenge or block opportunity
-        // Continue to next state based on current context
+        $playerId = intval($this->getCurrentPlayerId());
 
+        // Player passes on challenge or block opportunity
         $stateName = $this->gamestate->state()['name'];
+
         if ($stateName === 'challengeWindow') {
-            $currentAction = $this->getGameStateValue('current_action');
-            if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
-                $this->gamestate->nextState('blockWindow');
-            } else {
-                $this->gamestate->nextState('resolveAction');
-            }
+            // In multipleactiveplayer state, just make this player inactive
+            // The BGA framework will automatically transition when all players have acted
+            $this->gamestate->setPlayerNonMultiactive($playerId, 'resolveAction');
         } else if ($stateName === 'blockWindow') {
+            // Single player block window - can transition immediately
             $this->gamestate->nextState('resolveAction');
         }
     }
@@ -247,6 +246,7 @@ class Game extends \Table {
 
     public function stChallengeWindow() {
         $actionPlayerId = $this->getGameStateValue('current_action_player');
+        $currentAction = $this->getGameStateValue('current_action');
 
         // Activate all players except the action player for potential challenges
         $players = $this->loadPlayersBasicInfos();
@@ -257,8 +257,13 @@ class Game extends \Table {
             }
         }
 
-        $this->gamestate->setPlayersMultiactive($challengePlayers, 'resolveAction');
-        $this->gamestate->initializePrivateStateForAllActivePlayers();
+        // Determine the next state based on the action type
+        $nextState = 'resolveAction';
+        if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
+            $nextState = 'blockWindow';
+        }
+
+        $this->gamestate->setPlayersMultiactive($challengePlayers, $nextState);
     }
 
     public function stResolveChallenge() {
@@ -280,13 +285,15 @@ class Game extends \Table {
                 'challengeSuccessful',
                 clienttranslate('${challenger} successfully challenges ${player}\'s claim'),
                 [
-                    'challenger' => $this->getPlayerName($challengerId),
-                    'player' => $this->getPlayerName($actionPlayerId),
+                    'challenger' => $this->getPlayerNameById($challengerId),
+                    'player' => $this->getPlayerNameById($actionPlayerId),
                     'challengerId' => $challengerId,
                     'actionPlayerId' => $actionPlayerId
                 ]
             );
 
+            // Skip the challenged player's turn and move to next player
+            $this->activeNextPlayer();
             $this->gamestate->nextState('playerTurn');
         } else {
             // Challenge failed - challenger loses dice to Satan's pool
@@ -295,8 +302,8 @@ class Game extends \Table {
                 'challengeFailed',
                 clienttranslate('${challenger}\'s challenge fails against ${player}'),
                 [
-                    'challenger' => $this->getPlayerName($challengerId),
-                    'player' => $this->getPlayerName($actionPlayerId),
+                    'challenger' => $this->getPlayerNameById($challengerId),
+                    'player' => $this->getPlayerNameById($actionPlayerId),
                     'challengerId' => $challengerId,
                     'actionPlayerId' => $actionPlayerId
                 ]
@@ -312,9 +319,13 @@ class Game extends \Table {
     }
 
     public function stResolveAction() {
+
         $actionPlayerId = $this->getGameStateValue('current_action_player');
         $currentAction = $this->getGameStateValue('current_action');
         $targetPlayerId = $this->getGameStateValue('current_target_player');
+
+        $actionName = Actions::getActionName($currentAction);
+        $this->debug("DevilsDice: Resolving action - Player: $actionPlayerId, Action: $currentAction ($actionName), Target: $targetPlayerId");
 
         switch ($currentAction) {
             case Actions::RAISE_HELL:
@@ -337,6 +348,9 @@ class Game extends \Table {
                 break;
             case Actions::SATANS_STEAL:
                 $this->executeSatansSteal($actionPlayerId);
+                break;
+            default:
+                $this->debug("DevilsDice: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
                 break;
         }
 
@@ -381,7 +395,7 @@ class Game extends \Table {
                 'rolloffWinner',
                 clienttranslate('${player} wins the rolloff with ${imps} imps'),
                 [
-                    'player' => $this->getPlayerName($finalWinners[0]),
+                    'player' => $this->getPlayerNameById($finalWinners[0]),
                     'imps' => $maxImps,
                     'playerId' => $finalWinners[0]
                 ]
@@ -495,8 +509,8 @@ class Game extends \Table {
                 'diceStolen',
                 clienttranslate('${stealer} steals a die from ${victim}'),
                 [
-                    'stealer' => $this->getPlayerName($stealerId),
-                    'victim' => $this->getPlayerName($victimId),
+                    'stealer' => $this->getPlayerNameById($stealerId),
+                    'victim' => $this->getPlayerNameById($victimId),
                     'stealerId' => $stealerId,
                     'victimId' => $victimId
                 ]
@@ -527,7 +541,7 @@ class Game extends \Table {
                 'diceToSatansPool',
                 clienttranslate('A die from ${player} is rerolled into Satan\'s pool'),
                 [
-                    'player' => $this->getPlayerName($playerId),
+                    'player' => $this->getPlayerNameById($playerId),
                     'playerId' => $playerId,
                     'face' => $newFace
                 ]
@@ -539,30 +553,59 @@ class Game extends \Table {
         // Add 1 skull token
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + 1 WHERE player_id = $playerId");
 
-        // Reroll player's hand
+        // Get updated token count
+        $newTokenCount = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+
+        // Get current dice count before rerolling
+        $currentDiceCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+
+        // Reroll all of player's current dice
         $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-        $this->rollDiceForPlayer($playerId, 2);
+        $this->rollDiceForPlayer($playerId, $currentDiceCount, true); // true = notify all players about dice count
+
+        // Get player's new dice for the specific player
+        $playerDice = $this->getPlayerDice($playerId);
+
+        // Send a simple test notification first
+        $this->notifyAllPlayers(
+            'message',
+            'Test notification: Raise Hell executed',
+            []
+        );
 
         $this->notifyAllPlayers(
             'raiseHell',
             clienttranslate('${player} raises hell and rerolls their dice'),
             [
-                'player' => $this->getPlayerName($playerId),
-                'playerId' => $playerId
+                'player' => $this->getPlayerNameById($playerId),
+                'playerId' => $playerId,
+                'tokens' => $newTokenCount,
+                'diceCount' => $currentDiceCount
             ]
         );
+
+        // Send dedicated dice reroll notification to all players
+        $this->notifyAllPlayers('diceRerolled', '', [
+            'playerId' => $playerId,
+            'dice' => $playerDice,
+            'diceCount' => $currentDiceCount
+        ]);
     }
 
     private function executeHarvestSkulls($playerId) {
         // Add 2 skull tokens
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + 2 WHERE player_id = $playerId");
 
+        // Get updated token count
+        $newTokenCount = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+
         $this->notifyAllPlayers(
             'harvestSkulls',
             clienttranslate('${player} harvests 2 skull tokens'),
             [
-                'player' => $this->getPlayerName($playerId),
-                'playerId' => $playerId
+                'player' => $this->getPlayerNameById($playerId),
+                'playerId' => $playerId,
+                'tokens' => $newTokenCount
             ]
         );
     }
@@ -575,15 +618,21 @@ class Game extends \Table {
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - $tokensToSteal WHERE player_id = $targetId");
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + $tokensToSteal WHERE player_id = $playerId");
 
+        // Get updated token counts for both players
+        $playerNewTokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+        $targetNewTokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $targetId");
+
         $this->notifyAllPlayers(
             'extort',
             clienttranslate('${player} extorts ${tokens} skull tokens from ${target}'),
             [
-                'player' => $this->getPlayerName($playerId),
-                'target' => $this->getPlayerName($targetId),
+                'player' => $this->getPlayerNameById($playerId),
+                'target' => $this->getPlayerNameById($targetId),
                 'playerId' => $playerId,
                 'targetId' => $targetId,
-                'tokens' => $tokensToSteal
+                'tokens' => $tokensToSteal,
+                'playerNewTokens' => $playerNewTokens,
+                'targetNewTokens' => $targetNewTokens
             ]
         );
     }
@@ -599,8 +648,8 @@ class Game extends \Table {
             'reapSoul',
             clienttranslate('${player} reaps a soul from ${target}'),
             [
-                'player' => $this->getPlayerName($playerId),
-                'target' => $this->getPlayerName($targetId),
+                'player' => $this->getPlayerNameById($playerId),
+                'target' => $this->getPlayerNameById($targetId),
                 'playerId' => $playerId,
                 'targetId' => $targetId
             ]
@@ -635,7 +684,7 @@ class Game extends \Table {
             'pentagram',
             clienttranslate('${player} rerolls Satan\'s pool and gains ${pentagrams} pentagram dice'),
             [
-                'player' => $this->getPlayerName($playerId),
+                'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId,
                 'pentagrams' => min(1, $pentagramsRolled)
             ]
@@ -650,10 +699,27 @@ class Game extends \Table {
             'impsSet',
             clienttranslate('${player} uses Imp\'s Set to gain a die'),
             [
-                'player' => $this->getPlayerName($playerId),
+                'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId
             ]
         );
+
+        // Get player's new dice for the specific player
+        $playerDice = $this->getPlayerDice($playerId);
+
+        // Get current dice count before rerolling
+        $currentDiceCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+
+        // Reroll all of player's current dice
+        $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+        $this->rollDiceForPlayer($playerId, $currentDiceCount, true); // true = notify all players about dice count
+
+        // Send dedicated dice reroll notification to all players
+        $this->notifyAllPlayers('diceRerolled', '', [
+            'playerId' => $playerId,
+            'dice' => $playerDice,
+            'diceCount' => $currentDiceCount
+        ]);
     }
 
     private function executeSatansSteal($playerId) {
@@ -677,8 +743,8 @@ class Game extends \Table {
             'satansSteal',
             clienttranslate('${player} uses Satan\'s Steal on ${target}'),
             [
-                'player' => $this->getPlayerName($playerId),
-                'target' => $this->getPlayerName($targetId),
+                'player' => $this->getPlayerNameById($playerId),
+                'target' => $this->getPlayerNameById($targetId),
                 'playerId' => $playerId,
                 'targetId' => $targetId
             ]

@@ -25,6 +25,8 @@ interface NotificationArgs {
     victimId?: number;
     targetId?: number;
     tokens?: number;
+    playerNewTokens?: number;
+    targetNewTokens?: number;
     face?: string;
     pentagrams?: number;
     imps?: number;
@@ -72,7 +74,6 @@ export default class DevilsDice extends (GameGui as any) {
 
     constructor() {
         super();
-        console.log('DevilsDice constructor initialized');
     }
 
     setup(gamedatas: GameData): void {
@@ -81,8 +82,6 @@ export default class DevilsDice extends (GameGui as any) {
         // Store game data with proper typing and convert format
         this.playerTokens = {};
         if (gamedatas.playerTokens) {
-            console.log('Raw playerTokens data:', gamedatas.playerTokens);
-
             // Handle both formats: direct key-value pairs or array of objects
             for (const [key, entry] of Object.entries(gamedatas.playerTokens)) {
                 if (typeof entry === 'object' && entry !== null && 'player_id' in entry && 'skull_tokens' in entry) {
@@ -100,8 +99,6 @@ export default class DevilsDice extends (GameGui as any) {
                 }
             }
         }
-
-        console.log('Final playerTokens:', this.playerTokens);
 
         // Convert playerDiceCounts from array format to simple key-value mapping
         this.playerDiceCounts = {};
@@ -311,42 +308,75 @@ export default class DevilsDice extends (GameGui as any) {
     setupNotifications(): void {
         console.log('Setting up notifications');
 
-        // Use the BGA framework's notification setup
-        this['bgaSetupPromiseNotifications']({
-            diceRolled: 'notification_diceRolled',
-            diceCountUpdate: 'notification_diceCountUpdate',
-            gameSetupComplete: 'notification_gameSetupComplete',
-            challengeSuccessful: 'notification_challengeSuccessful',
-            challengeFailed: 'notification_challengeFailed',
-            diceStolen: 'notification_diceStolen',
-            diceToSatansPool: 'notification_diceToSatansPool',
-            raiseHell: 'notification_raiseHell',
-            harvestSkulls: 'notification_harvestSkulls',
-            extort: 'notification_extort',
-            reapSoul: 'notification_reapSoul',
-            pentagram: 'notification_pentagram',
-            impsSet: 'notification_impsSet',
-            satansSteal: 'notification_satansSteal',
-            rolloffWinner: 'notification_rolloffWinner',
-        });
+        // In BGA, notifications are automatically handled if the notification_* methods exist
+        // We just need to make sure the methods are properly bound
+
+        // Test if we can access the notification queue
+        if (this['notifqueue']) {
+            console.log('Notification queue found:', this['notifqueue']);
+        } else {
+            console.log('No notification queue found');
+        }
+
+        // Manually bind notification methods to ensure they're accessible
+        console.log('Available notification methods:');
+        const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(this));
+        methods
+            .filter((method) => method.startsWith('notification_'))
+            .forEach((method) => {
+                console.log(`Found notification method: ${method}`);
+                // Explicitly bind the method to this instance
+                if (typeof this[method] === 'function') {
+                    this[method] = this[method].bind(this);
+                    console.log(`Bound method: ${method}`);
+                }
+            });
+
+        // Also try manual registration with dojo.subscribe as a fallback
+        try {
+            if (typeof dojo !== 'undefined' && dojo.subscribe) {
+                console.log('Attempting manual dojo.subscribe registration');
+
+                // Register all notifications with dojo.subscribe for maximum reliability
+                const notificationList = [
+                    'message',
+                    'diceRolled',
+                    'diceRerolled',
+                    'diceCountUpdate',
+                    'gameSetupComplete',
+                    'challengeSuccessful',
+                    'challengeFailed',
+                    'diceStolen',
+                    'diceToSatansPool',
+                    'raiseHell',
+                    'harvestSkulls',
+                    'extort',
+                    'reapSoul',
+                    'pentagram',
+                    'impsSet',
+                    'satansSteal',
+                    'rolloffWinner',
+                ];
+
+                notificationList.forEach((notifName) => {
+                    dojo.subscribe(notifName, this, `notification_${notifName}`);
+                    console.log(`Registered dojo.subscribe: ${notifName} -> notification_${notifName}`);
+                });
+
+                console.log('Manual dojo.subscribe completed for all notifications');
+            }
+        } catch (e) {
+            console.log('dojo.subscribe not available:', e);
+        }
+
+        console.log('Notifications setup completed - methods should be auto-detected');
     }
 
-    notification_diceRolled = (notif: {args: NotificationArgs}): void => {
-        console.log('Dice rolled notification', notif);
-        const playerId = notif.args.playerId;
-        const dice = notif.args.dice || {};
-
-        // Update the dice count for the specific player
-        if (playerId) {
-            this.playerDiceCounts[playerId] = Object.keys(dice).length;
-            this.updatePlayersInfo(); // Refresh the display for all players
-        }
-
-        if (playerId === this['player_id']) {
-            this.myDice = dice;
-            this.updateMyDice();
-        }
-    };
+    // Add a simple message notification handler for testing
+    notification_message(notif: {args: any}): void {
+        console.log('Message notification received:', notif);
+        // This should show the test message in the game
+    }
 
     notification_diceCountUpdate = (notif: {args: NotificationArgs}): void => {
         console.log('Dice count update notification', notif);
@@ -387,17 +417,126 @@ export default class DevilsDice extends (GameGui as any) {
     };
 
     notification_raiseHell = (notif: {args: NotificationArgs}): void => {
-        console.log('Raise Hell action', notif);
+        console.log('Raise Hell action notification received:', notif);
+        const playerId = notif.args.playerId;
+        const tokens = notif.args.tokens;
+        const diceCount = notif.args.diceCount;
+
+        console.log(`Updating player ${playerId}: tokens=${tokens}, diceCount=${diceCount}`);
+
+        // Update player tokens if provided
+        if (playerId && tokens !== undefined) {
+            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+            this.playerTokens[playerId] = tokens;
+            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+        }
+
+        // Update dice count if provided
+        if (playerId && diceCount !== undefined) {
+            console.log(`Before update - playerDiceCounts[${playerId}] = ${this.playerDiceCounts[playerId]}`);
+            this.playerDiceCounts[playerId] = diceCount;
+            console.log(`After update - playerDiceCounts[${playerId}] = ${this.playerDiceCounts[playerId]}`);
+        }
+
+        // If this is the current player, we need to wait for the diceRolled notification
+        // to get the new dice data, but let's update the display now for the token changes
+        console.log('Calling updateDisplay() after Raise Hell');
         this.updateDisplay();
     };
 
+    notification_diceRolled = (notif: {args: NotificationArgs}): void => {
+        console.log('Dice rolled notification received:', notif);
+        const playerId = notif.args.playerId;
+        const dice = notif.args.dice || {};
+
+        console.log(`Dice rolled for player ${playerId}:`, dice);
+
+        // Update the dice count for the specific player
+        if (playerId) {
+            const diceCount = Object.keys(dice).length;
+            console.log(`Updating dice count for player ${playerId}: ${diceCount}`);
+            this.playerDiceCounts[playerId] = diceCount;
+            this.updatePlayersInfo(); // Refresh the display for all players
+        }
+
+        // If this is the current player, update their dice display
+        if (playerId === this['player_id']) {
+            console.log('Updating my dice with new data:', dice);
+            this.myDice = dice;
+            this.updateMyDice();
+            console.log('My dice updated successfully');
+        }
+    };
+
+    notification_diceRerolled = (notif: {args: NotificationArgs}): void => {
+        console.log('Dice rerolled notification received:', notif);
+        const playerId = notif.args.playerId;
+        const dice = notif.args.dice || {};
+        const diceCount = notif.args.diceCount;
+
+        console.log(`Dice rerolled for player ${playerId}:`, dice, `count: ${diceCount}`);
+
+        // Update the dice count for the specific player
+        if (playerId && diceCount !== undefined) {
+            console.log(`Updating dice count for player ${playerId}: ${diceCount}`);
+            this.playerDiceCounts[playerId] = diceCount;
+            this.updatePlayersInfo(); // Refresh the display for all players
+        }
+
+        // If this is the current player, update their dice display
+        // Convert both to strings for comparison to handle type mismatches
+        if (String(playerId) === String(this['player_id']) && dice && Object.keys(dice).length > 0) {
+            this.myDice = dice;
+            this.updateMyDice();
+            console.log('My dice updated successfully from diceRerolled');
+        } else {
+            console.log('NOT updating my dice because:');
+            console.log(`- Player ID match: ${String(playerId) === String(this['player_id'])}`);
+            console.log(`- Dice data exists: ${dice && Object.keys(dice).length > 0}`);
+        }
+    };
+
     notification_harvestSkulls = (notif: {args: NotificationArgs}): void => {
-        console.log('Harvest Skulls action', notif);
+        console.log('Harvest Skulls action notification received:', notif);
+        const playerId = notif.args.playerId;
+        const tokens = notif.args.tokens;
+
+        console.log(`Updating player ${playerId}: tokens=${tokens}`);
+
+        // Update player tokens if provided
+        if (playerId && tokens !== undefined) {
+            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+            this.playerTokens[playerId] = tokens;
+            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+        }
+
+        console.log('Calling updateDisplay() after Harvest Skulls');
         this.updateDisplay();
     };
 
     notification_extort = (notif: {args: NotificationArgs}): void => {
-        console.log('Extort action', notif);
+        console.log('Extort action notification received:', notif);
+        const playerId = notif.args.playerId;
+        const targetId = notif.args.targetId;
+        const playerNewTokens = notif.args.playerNewTokens;
+        const targetNewTokens = notif.args.targetNewTokens;
+
+        console.log(`Updating extort - Player ${playerId}: ${playerNewTokens} tokens, Target ${targetId}: ${targetNewTokens} tokens`);
+
+        // Update both players' token counts
+        if (playerId && playerNewTokens !== undefined) {
+            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+            this.playerTokens[playerId] = playerNewTokens;
+            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+        }
+
+        if (targetId && targetNewTokens !== undefined) {
+            console.log(`Before update - playerTokens[${targetId}] = ${this.playerTokens[targetId]}`);
+            this.playerTokens[targetId] = targetNewTokens;
+            console.log(`After update - playerTokens[${targetId}] = ${this.playerTokens[targetId]}`);
+        }
+
+        console.log('Calling updateDisplay() after Extort');
         this.updateDisplay();
     };
 
@@ -444,7 +583,7 @@ export default class DevilsDice extends (GameGui as any) {
                 
                 <div id="satans-pool-area">
                     <h3>${_("Satan's Pool")}</h3>
-                    <img src="img/Devils_Dice_board.png" alt="Satan" class="satan-image" />
+                    <img src="${g_gamethemeurl}img/Devils_Dice_board.png" alt="Satan" class="satan-image" />
                     <div id="satans-pool"></div>
                 </div>
                 
@@ -492,7 +631,7 @@ export default class DevilsDice extends (GameGui as any) {
                 const gameInfo = document.createElement('div');
                 gameInfo.className = 'player-game-info';
                 gameInfo.innerHTML = `
-                    <div class="player-skull-tokens">💀 ${tokens}</div>
+                    <div class="player-skull-tokens"><img src="${g_gamethemeurl}img/skull_tokens.png" alt="Skulls" class="skull-token-icon" /> ${tokens}</div>
                     <div class="player-dice-count">🎲 ${diceCount}</div>
                     ${this.targetSelectionCallback ? `<button class="target-btn" data-player-id="${playerId}">${_('Select')}</button>` : ''}
                 `;
@@ -523,9 +662,25 @@ export default class DevilsDice extends (GameGui as any) {
         const myDiceArea = this.uiElements.myDice;
         if (!myDiceArea) return;
 
+        console.log('updateMyDice: myDice data structure:', this.myDice);
+
         let html = '';
         for (const diceId in this.myDice) {
-            const face = this.myDice[diceId];
+            const diceData = this.myDice[diceId];
+            console.log(`Dice ${diceId}:`, diceData, 'Type:', typeof diceData);
+
+            // Handle both string face values and object structures
+            let face: string;
+            if (typeof diceData === 'string') {
+                face = diceData;
+            } else if (typeof diceData === 'object' && diceData !== null) {
+                // If it's an object, look for common face property names
+                face = (diceData as any).face || (diceData as any).dice_face || (diceData as any).value || '';
+                console.log(`Extracted face from object:`, face);
+            } else {
+                face = '';
+            }
+
             if (face) {
                 html += `<div class="die my-die" data-face="${face}" data-dice-id="${diceId}">
                     ${this.getDiceSymbol(face)}
@@ -557,15 +712,20 @@ export default class DevilsDice extends (GameGui as any) {
     //// Utility Functions
 
     private getDiceSymbol(face: string): string {
+        console.log('Getting symbol for face:', face);
+
         const symbols: DiceSymbols = {
-            [DICE_FACES.FLAME]: '🔥',
-            [DICE_FACES.PENTAGRAM]: '⭐',
-            [DICE_FACES.SCYTHE]: '⚔️',
-            [DICE_FACES.TRIDENT]: '🔱',
-            [DICE_FACES.SKULL]: '💀',
-            [DICE_FACES.IMP]: '👹',
+            flame: `<img src="${g_gamethemeurl}img/flame_icon.svg" alt="Flame" class="dice-icon" />`,
+            pentagram: `<img src="${g_gamethemeurl}img/pentagram_icon.svg" alt="Pentagram" class="dice-icon" />`,
+            scythe: `<img src="${g_gamethemeurl}img/scythe_icon.svg" alt="Scythe" class="dice-icon" />`,
+            trident: `<img src="${g_gamethemeurl}img/trident_icon.svg" alt="Trident" class="dice-icon" />`,
+            skull: `<img src="${g_gamethemeurl}img/skull_icon.svg" alt="Skull" class="dice-icon" />`,
+            imp: `<img src="${g_gamethemeurl}img/imp_icon.svg" alt="Imp" class="dice-icon" />`,
         };
-        return symbols[face] || '?';
+
+        const symbol = symbols[face] || '?';
+        console.log(`Face "${face}" mapped to symbol HTML`);
+        return symbol;
     }
 
     private selectTarget(callback: (playerId: string) => void): void {

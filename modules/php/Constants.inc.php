@@ -39,13 +39,38 @@ class DiceFaces {
 }
 
 class Actions {
-    const RAISE_HELL = 'raise_hell';
-    const HARVEST_SKULLS = 'harvest_skulls';
-    const EXTORT = 'extort';
-    const REAP_SOUL = 'reap_soul';
-    const PENTAGRAM = 'pentagram';
-    const IMPS_SET = 'imps_set';
-    const SATANS_STEAL = 'satans_steal';
-    const CHALLENGE = 'challenge';
-    const BLOCK = 'block';
+    const RAISE_HELL = 1;
+    const HARVEST_SKULLS = 2;
+    const EXTORT = 3;
+    const REAP_SOUL = 4;
+    const PENTAGRAM = 5;
+    const IMPS_SET = 6;
+    const SATANS_STEAL = 7;
+    const CHALLENGE = 8;
+    const BLOCK = 9;
+
+    public static function getActionName($actionId) {
+        switch ($actionId) {
+            case self::RAISE_HELL:
+                return 'raise_hell';
+            case self::HARVEST_SKULLS:
+                return 'harvest_skulls';
+            case self::EXTORT:
+                return 'extort';
+            case self::REAP_SOUL:
+                return 'reap_soul';
+            case self::PENTAGRAM:
+                return 'pentagram';
+            case self::IMPS_SET:
+                return 'imps_set';
+            case self::SATANS_STEAL:
+                return 'satans_steal';
+            case self::CHALLENGE:
+                return 'challenge';
+            case self::BLOCK:
+                return 'block';
+            default:
+                return 'unknown';
+        }
+    }
 }
