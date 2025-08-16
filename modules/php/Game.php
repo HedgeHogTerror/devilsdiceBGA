@@ -59,6 +59,8 @@ class Game extends \Table {
      * @return array
      * @see ./states.inc.php
      */
+    private const STARTING_SKULL_TOKENS = 6;
+    private const STARTING_DICE = 2;
 
 
     /**
@@ -157,20 +159,21 @@ class Game extends \Table {
             throw new \BgaUserException("You need 6 skull tokens to use Satan's Steal");
         }
 
-        $actionData = json_encode([
-            'target' => $targetPlayerId,
-            'putInPool' => $putInPool,
-            'poolFace' => $poolFace
-        ]);
-
         $this->setGameStateValue('current_action', Actions::SATANS_STEAL);
         $this->setGameStateValue('current_action_player', $playerId);
         $this->setGameStateValue('current_target_player', $targetPlayerId);
-        $this->setGameStateValue('action_data', $actionData);
+
+        // Store the decision parameters
+        $actionData = json_encode([
+            'putInPool' => $putInPool,
+            'poolFace' => $poolFace
+        ]);
+        $this->setGameStateValue('action_data', (string)$actionData);
 
         // Satan's Steal cannot be challenged, go directly to resolution
         $this->gamestate->nextState('resolveAction');
     }
+
 
     public function challenge() {
         $this->checkAction('challenge');
@@ -227,14 +230,14 @@ class Game extends \Table {
         $this->debug("DevilsDice: Found " . count($players) . " players");
 
         foreach ($players as $playerId => $player) {
-            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, 1)");
+            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, " . self::STARTING_SKULL_TOKENS . ")");
             $this->debug("DevilsDice: Created tokens for player $playerId");
         }
 
         // Then give each player 2 starting dice with full notification
         foreach ($players as $playerId => $player) {
             $this->debug("DevilsDice: Rolling dice for player $playerId");
-            $this->rollDiceForPlayer($playerId, 2, true); // true = notify all players
+            $this->addOrRemoveDice($playerId, self::STARTING_DICE);
         }
 
         // Send a final notification to refresh all game data
@@ -279,11 +282,11 @@ class Game extends \Table {
         $challengeSuccessful = !$this->validateActionClaim($currentAction, $playerDice, $actionPlayerId);
 
         if ($challengeSuccessful) {
-            // Challenge successful - challenger steals dice, action cancelled
-            $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
+            // Note: stealDiceFromPlayer already rerolls both players' dice
+
             $this->notifyAllPlayers(
                 'challengeSuccessful',
-                clienttranslate('${challenger} successfully challenges ${player}\'s claim'),
+                clienttranslate('${challenger} successfully challenges ${player}\'s claim - both players reroll their dice'),
                 [
                     'challenger' => $this->getPlayerNameById($challengerId),
                     'player' => $this->getPlayerNameById($actionPlayerId),
@@ -292,12 +295,14 @@ class Game extends \Table {
                 ]
             );
 
+            // Challenge successful - challenger steals dice, action cancelled
+            $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
+
             // Skip the challenged player's turn and move to next player
             $this->activeNextPlayer();
             $this->gamestate->nextState('playerTurn');
         } else {
             // Challenge failed - challenger loses dice to Satan's pool
-            $this->moveDiceToSatansPool($challengerId);
             $this->notifyAllPlayers(
                 'challengeFailed',
                 clienttranslate('${challenger}\'s challenge fails against ${player}'),
@@ -308,6 +313,8 @@ class Game extends \Table {
                     'actionPlayerId' => $actionPlayerId
                 ]
             );
+
+            $this->moveDiceToSatansPool($challengerId);
 
             // Continue with original action
             if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
@@ -330,31 +337,37 @@ class Game extends \Table {
         switch ($currentAction) {
             case Actions::RAISE_HELL:
                 $this->executeRaiseHell($actionPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::HARVEST_SKULLS:
                 $this->executeHarvestSkulls($actionPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::EXTORT:
                 $this->executeExtort($actionPlayerId, $targetPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::REAP_SOUL:
                 $this->executeReapSoul($actionPlayerId, $targetPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::PENTAGRAM:
                 $this->executePentagram($actionPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::IMPS_SET:
                 $this->executeImpsSet($actionPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::SATANS_STEAL:
                 $this->executeSatansSteal($actionPlayerId);
+                $this->gamestate->nextState('checkWin');
                 break;
             default:
                 $this->debug("DevilsDice: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
+                $this->gamestate->nextState('checkWin');
                 break;
         }
-
-        $this->gamestate->nextState('checkWin');
     }
 
     public function stCheckWin() {
@@ -366,7 +379,7 @@ class Game extends \Table {
             $this->gamestate->nextState('endGame');
         } else if (count($winners) > 1) {
             // Tie - need rolloff
-            $this->setGameStateValue('action_data', json_encode($winners));
+            $this->setGameStateValue('action_data', (string)json_encode($winners));
             $this->gamestate->nextState('rolloff');
         } else {
             // No winner yet, continue game
@@ -413,36 +426,33 @@ class Game extends \Table {
      * Helper methods
      */
 
-    private function rollDiceForPlayer($playerId, $count, $notifyAll = false) {
-        $faces = DiceFaces::getAllFaces();
-        $this->debug("DevilsDice rollDiceForPlayer: Creating $count dice for player $playerId");
+    /**
+     * Reroll all existing dice for a player and send notification
+     */
+    private function rollDiceForPlayer($playerId) {
+        $currentCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
 
-        for ($i = 0; $i < $count; $i++) {
-            $randomFace = $faces[array_rand($faces)];
-            $query = "INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')";
-            $this->debug("DevilsDice rollDiceForPlayer: Executing query: $query");
-            $this->DbQuery($query);
+        if ($currentCount > 0) {
+            // Delete existing dice
+            $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+
+            // Roll new dice with new faces
+            $faces = DiceFaces::getAllFaces();
+            for ($i = 0; $i < $currentCount; $i++) {
+                $randomFace = $faces[array_rand($faces)];
+                $this->DbQuery("INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')");
+            }
         }
 
-        // Verify dice were created
-        $actualCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-        $this->debug("DevilsDice rollDiceForPlayer: Player $playerId now has $actualCount dice");
-
-        // Always notify the individual player about their specific dice
+        // Get the new dice data and send notification
         $playerDice = $this->getPlayerDice($playerId);
-        $this->debug("DevilsDice rollDiceForPlayer: Player dice data: " . json_encode($playerDice));
+        $this->debug("DevilsDice rollDiceForPlayer: Player $playerId rerolled $currentCount dice");
 
-        $this->notifyPlayer($playerId, 'diceRolled', '', [
-            'dice' => $playerDice
+        $this->notifyAllPlayers('diceRerolled', '', [
+            'playerId' => $playerId,
+            'dice' => $playerDice,
+            'diceCount' => $currentCount
         ]);
-
-        // If requested, notify all players about dice count changes
-        if ($notifyAll) {
-            $this->notifyAllPlayers('diceCountUpdate', '', [
-                'playerId' => $playerId,
-                'diceCount' => $actualCount
-            ]);
-        }
     }
 
     private function getPlayerDice($playerId) {
@@ -495,6 +505,31 @@ class Game extends \Table {
         return count($uniqueNonImpFaces) === 1;
     }
 
+    /**
+     * Add or remove dice from a player and send notification
+     */
+    private function addOrRemoveDice($playerId, $count) {
+        $current = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+        $newCount = max(0, $current + $count); // Ensure we don't go below 0
+
+        // Delete existing dice
+        if ($current > 0) {
+            $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+        }
+
+        // Create new dice with random faces
+        $faces = DiceFaces::getAllFaces();
+        for ($i = 0; $i < $newCount; $i++) {
+            $randomFace = $faces[array_rand($faces)];
+            $this->DbQuery("INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')");
+        }
+
+        $this->debug("DevilsDice addOrRemoveDice: Player $playerId now has $newCount dice (was $current, changed by $count)");
+
+        // Send notification
+        $this->rollDiceForPlayer($playerId);
+    }
+
     private function stealDiceFromPlayer($stealerId, $victimId) {
         // Get a random die from victim
         $victimDice = $this->getCollectionFromDb(
@@ -515,38 +550,39 @@ class Game extends \Table {
                     'victimId' => $victimId
                 ]
             );
+
+            // Reroll dice for both players - let frontend handle animation sequencing
+            $this->rollDiceForPlayer($stealerId);
+            $this->rollDiceForPlayer($victimId);
         }
     }
 
-    private function moveDiceToSatansPool($playerId) {
+    private function moveDiceToSatansPool($playerId, $face = null) {
         // Get a random die from player
-        $playerDice = $this->getCollectionFromDb(
-            "SELECT dice_id, face FROM player_dice WHERE player_id = $playerId AND location = 'hand' LIMIT 1"
-        );
 
-        if (!empty($playerDice)) {
-            $diceData = array_values($playerDice)[0];
-            $diceId = $diceData['dice_id'];
-            $face = $diceData['face'];
-
-            // Remove from player and add to Satan's pool
-            $this->DbQuery("DELETE FROM player_dice WHERE dice_id = $diceId");
-
+        // Remove from player and add to Satan's pool
+        $this->addOrRemoveDice($playerId, -1);
+        if ($face === null) {
             // Roll the die and add to Satan's pool
             $faces = DiceFaces::getAllFaces();
             $newFace = $faces[array_rand($faces)];
             $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$newFace')");
-
-            $this->notifyAllPlayers(
-                'diceToSatansPool',
-                clienttranslate('A die from ${player} is rerolled into Satan\'s pool'),
-                [
-                    'player' => $this->getPlayerNameById($playerId),
-                    'playerId' => $playerId,
-                    'face' => $newFace
-                ]
-            );
+        } else {
+            // Use the provided face
+            $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$face')");
         }
+
+        $this->notifyAllPlayers(
+            'diceToSatansPool',
+            clienttranslate('A die from ${player} is rolled into Satan\'s pool'),
+            [
+                'player' => $this->getPlayerNameById($playerId),
+                'playerId' => $playerId,
+                'face' => $newFace
+            ]
+        );
+
+        $this->addOrRemoveDice($playerId, -1);
     }
 
     private function executeRaiseHell($playerId) {
@@ -556,23 +592,6 @@ class Game extends \Table {
         // Get updated token count
         $newTokenCount = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
 
-        // Get current dice count before rerolling
-        $currentDiceCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-
-        // Reroll all of player's current dice
-        $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-        $this->rollDiceForPlayer($playerId, $currentDiceCount, true); // true = notify all players about dice count
-
-        // Get player's new dice for the specific player
-        $playerDice = $this->getPlayerDice($playerId);
-
-        // Send a simple test notification first
-        $this->notifyAllPlayers(
-            'message',
-            'Test notification: Raise Hell executed',
-            []
-        );
-
         $this->notifyAllPlayers(
             'raiseHell',
             clienttranslate('${player} raises hell and rerolls their dice'),
@@ -580,16 +599,12 @@ class Game extends \Table {
                 'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId,
                 'tokens' => $newTokenCount,
-                'diceCount' => $currentDiceCount
+                'diceCount' => $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'")
             ]
         );
 
-        // Send dedicated dice reroll notification to all players
-        $this->notifyAllPlayers('diceRerolled', '', [
-            'playerId' => $playerId,
-            'dice' => $playerDice,
-            'diceCount' => $currentDiceCount
-        ]);
+        // Reroll all of player's current dice
+        $this->rollDiceForPlayer($playerId);
     }
 
     private function executeHarvestSkulls($playerId) {
@@ -641,9 +656,6 @@ class Game extends \Table {
         // Pay 2 skull tokens
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
 
-        // Steal a die from target
-        $this->stealDiceFromPlayer($playerId, $targetId);
-
         $this->notifyAllPlayers(
             'reapSoul',
             clienttranslate('${player} reaps a soul from ${target}'),
@@ -654,16 +666,18 @@ class Game extends \Table {
                 'targetId' => $targetId
             ]
         );
+
+        // Steal a die from target
+        $this->stealDiceFromPlayer($playerId, $targetId);
     }
 
     private function executePentagram($playerId) {
-        // Reroll all dice in Satan's pool
-        $this->DbQuery("DELETE FROM satans_pool");
-
+        // Get existing dice in Satan's pool before rerolling
         $poolDice = $this->getCollectionFromDb("SELECT dice_id FROM satans_pool");
         $faces = DiceFaces::getAllFaces();
         $pentagramsRolled = 0;
 
+        // Reroll each die in Satan's pool
         foreach ($poolDice as $diceId => $dice) {
             $newFace = $faces[array_rand($faces)];
             $this->DbQuery("UPDATE satans_pool SET face = '$newFace' WHERE dice_id = $diceId");
@@ -675,73 +689,68 @@ class Game extends \Table {
 
         // Gain up to 1 pentagram
         if ($pentagramsRolled > 0) {
-            $this->rollDiceForPlayer($playerId, 1);
+
             // Set the new die to pentagram
             $this->DbQuery("UPDATE player_dice SET face = '" . DiceFaces::PENTAGRAM . "' WHERE player_id = $playerId AND location = 'hand' ORDER BY dice_id DESC LIMIT 1");
-        }
 
-        $this->notifyAllPlayers(
-            'pentagram',
-            clienttranslate('${player} rerolls Satan\'s pool and gains ${pentagrams} pentagram dice'),
-            [
-                'player' => $this->getPlayerNameById($playerId),
-                'playerId' => $playerId,
-                'pentagrams' => min(1, $pentagramsRolled)
-            ]
-        );
+            $this->notifyAllPlayers(
+                'pentagram',
+                clienttranslate('${player} rerolls Satan\'s pool and gains one pentagram dice'),
+                [
+                    'player' => $this->getPlayerNameById($playerId),
+                    'playerId' => $playerId,
+                    'pentagrams' => 1
+                ]
+            );
+
+            $this->addOrRemoveDice($playerId, 1);
+        } else {
+            $this->notifyAllPlayers(
+                'pentagram',
+                clienttranslate('${player} rerolls Satan\'s pool and did not roll any pentagrams'),
+                [
+                    'player' => $this->getPlayerNameById($playerId),
+                    'playerId' => $playerId,
+                    'pentagrams' => 0
+                ]
+            );
+        }
     }
 
     private function executeImpsSet($playerId) {
-        // Gain 1 die from bank
-        $this->rollDiceForPlayer($playerId, 1);
-
         $this->notifyAllPlayers(
             'impsSet',
-            clienttranslate('${player} uses Imp\'s Set to gain a die'),
+            clienttranslate('${player} uses Imp\'s Set to gain a die and rerolls all dice'),
             [
                 'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId
             ]
         );
 
-        // Get player's new dice for the specific player
-        $playerDice = $this->getPlayerDice($playerId);
-
-        // Get current dice count before rerolling
-        $currentDiceCount = $this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-
-        // Reroll all of player's current dice
-        $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
-        $this->rollDiceForPlayer($playerId, $currentDiceCount, true); // true = notify all players about dice count
-
-        // Send dedicated dice reroll notification to all players
-        $this->notifyAllPlayers('diceRerolled', '', [
-            'playerId' => $playerId,
-            'dice' => $playerDice,
-            'diceCount' => $currentDiceCount
-        ]);
+        // Add 1 die and reroll all dice
+        $this->addOrRemoveDice($playerId, 1);
     }
 
     private function executeSatansSteal($playerId) {
-        $actionData = json_decode($this->getGameStateValue('action_data'), true);
-        $targetId = $actionData['target'];
-        $putInPool = $actionData['putInPool'];
-        $poolFace = $actionData['poolFace'];
+        $targetId = $this->getGameStateValue('current_target_player');
+
+        // Check if we have action data (from decision state)
+        $actionDataJson = $this->getGameStateValue('action_data');
+        $putInPool = false;
+        $poolFace = null;
+
+        if ($actionDataJson && is_string($actionDataJson)) {
+            $actionData = json_decode($actionDataJson, true);
+            $putInPool = $actionData['putInPool'] ?? false;
+            $poolFace = $actionData['poolFace'] ?? null;
+        }
 
         // Pay 6 skull tokens
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 6 WHERE player_id = $playerId");
 
-        // Steal a die from target
-        $this->stealDiceFromPlayer($playerId, $targetId);
-
-        // Optionally put it in Satan's pool on chosen face
-        if ($putInPool && $poolFace) {
-            $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$poolFace')");
-        }
-
         $this->notifyAllPlayers(
             'satansSteal',
-            clienttranslate('${player} uses Satan\'s Steal on ${target}'),
+            clienttranslate('${player} uses Satan\'s Steal on ${target} and rerolls their dice'),
             [
                 'player' => $this->getPlayerNameById($playerId),
                 'target' => $this->getPlayerNameById($targetId),
@@ -749,6 +758,14 @@ class Game extends \Table {
                 'targetId' => $targetId
             ]
         );
+
+        // Optionally put it in Satan's pool on chosen face
+        if ($putInPool && $poolFace) {
+            $this->moveDiceToSatansPool($targetId, $poolFace);
+        } else {
+            // Steal a die from target
+            $this->stealDiceFromPlayer($targetId, $targetId);
+        }
     }
 
     private function checkForWinners() {
@@ -960,14 +977,14 @@ class Game extends \Table {
 
         // Initialize player tokens
         foreach ($players as $playerId => $player) {
-            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, 1)");
+            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, " . self::STARTING_SKULL_TOKENS . ")");
             $this->debug("DevilsDice: Created tokens for player $playerId");
         }
 
         // Give each player 2 starting dice
         foreach ($players as $playerId => $player) {
             $this->debug("DevilsDice: Rolling dice for player $playerId");
-            $this->rollDiceForPlayer($playerId, 2, false); // Don't notify during setup
+            $this->addOrRemoveDice($playerId, self::STARTING_DICE); // Don't notify during setup
         }
 
         // Init global values with their initial values.

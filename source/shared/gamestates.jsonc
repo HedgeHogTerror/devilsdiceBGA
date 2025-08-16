@@ -41,8 +41,8 @@
 			"impsSet": [],
 			"satansSteal": [
 				{ "name": "targetPlayerId", "type": "AT_int" },
-				{ "name": "putInPool", "type": "AT_bool", "default": false },
-				{ "name": "poolFace", "type": "AT_alphanum", "default": null }
+				{ "name": "putInPool", "type": "AT_bool" },
+				{ "name": "poolFace", "type": "AT_alphanum" }
 			]
 		},
 		"transitions": { 
@@ -51,6 +51,7 @@
 			"endGame": 99 
 		}
 	},
+
 
 	// Challenge window - players may challenge the action
 	"3": {

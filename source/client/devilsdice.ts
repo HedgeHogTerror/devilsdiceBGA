@@ -50,6 +50,7 @@ const GAME_STATES = {
     PLAYER_TURN: 'playerTurn',
     CHALLENGE_WINDOW: 'challengeWindow',
     BLOCK_WINDOW: 'blockWindow',
+    SATANS_STEAL_DECISION: 'satansStealDecision',
 } as const;
 
 /**
@@ -87,7 +88,6 @@ export default class DevilsDice extends (GameGui as any) {
                 if (typeof entry === 'object' && entry !== null && 'player_id' in entry && 'skull_tokens' in entry) {
                     // Format: {player_id: "123", skull_tokens: "1"}
                     this.playerTokens[entry['player_id']] = parseInt(entry['skull_tokens']);
-                    console.log(`Converted player ${entry.player_id} skull tokens: ${entry['skull_tokens']}`);
                 } else if (typeof entry === 'number') {
                     // Format: {"123": 1}
                     this.playerTokens[key] = entry;
@@ -110,7 +110,6 @@ export default class DevilsDice extends (GameGui as any) {
                 if (typeof entry === 'object' && entry !== null && 'player_id' in entry && 'dice_count' in entry) {
                     // Format: {player_id: "123", dice_count: "2"}
                     this.playerDiceCounts[entry.player_id] = parseInt(entry.dice_count);
-                    console.log(`Converted player ${entry.player_id} dice count: ${entry.dice_count}`);
                 } else if (typeof entry === 'number') {
                     // Format: {"123": 2}
                     this.playerDiceCounts[key] = entry;
@@ -123,18 +122,35 @@ export default class DevilsDice extends (GameGui as any) {
             }
         }
 
-        console.log('Final playerDiceCounts:', this.playerDiceCounts);
-
         this.myDice = gamedatas.myDice || {};
-        this.satansPool = gamedatas.satansPool || {};
+
+        // Convert Satan's pool data from backend format to frontend format
+        this.satansPool = {};
+        if (gamedatas.satansPool) {
+            console.log("Satan's pool data from backend:", gamedatas.satansPool);
+
+            // Handle both formats: direct key-value pairs or array of objects
+            for (const [key, entry] of Object.entries(gamedatas.satansPool)) {
+                if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
+                    // Format: {dice_id: "1", face: "imp"}
+                    const diceEntry = entry as {dice_id: string; face: string};
+                    this.satansPool[diceEntry.dice_id] = diceEntry.face;
+                    console.log(`Converted Satan's pool die ${diceEntry.dice_id}: ${diceEntry.face}`);
+                } else if (typeof entry === 'string') {
+                    // Format: {"1": "imp"}
+                    this.satansPool[key] = entry;
+                    console.log(`Direct Satan's pool die ${key}: ${entry}`);
+                }
+            }
+        }
+
+        console.log("Processed Satan's pool:", this.satansPool);
 
         // Initialize UI
         this.createGameBoard();
         this.cacheUIElements();
         this.updateDisplay();
         this.setupNotifications();
-
-        console.log('Game setup completed');
     }
 
     onEnteringState(stateName: string, args: any): void {
@@ -209,18 +225,33 @@ export default class DevilsDice extends (GameGui as any) {
     //// Action Button Management
 
     private addPlayerTurnButtons(): void {
+        const currentPlayerId = this['player_id'];
+        const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
+
         const actions = [
-            {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell'},
-            {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls'},
-            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort'},
-            {id: 'reapSoul', label: _('Reap Soul (Scythe)'), handler: 'onReapSoul'},
-            {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram'},
-            {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet'},
-            {id: 'satansSteal', label: _("Satan's Steal"), handler: 'onSatansSteal'},
+            {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell', enabled: true},
+            {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls', enabled: true},
+            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true},
+            {id: 'reapSoul', label: _('Reap Soul (Scythe) - 2 skulls'), handler: 'onReapSoul', enabled: currentPlayerTokens >= 2},
+            {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram', enabled: true},
+            {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet', enabled: true},
+            {id: 'satansSteal', label: _("Satan's Steal - 6 skulls"), handler: 'onSatansSteal', enabled: currentPlayerTokens >= 6},
         ];
 
         actions.forEach((action) => {
-            this['addActionButton'](`${action.id}_btn`, action.label, action.handler);
+            const buttonId = `${action.id}_btn`;
+            this['addActionButton'](buttonId, action.label, action.enabled ? action.handler : null);
+
+            // Disable button if not enough tokens
+            if (!action.enabled) {
+                const button = document.getElementById(buttonId);
+                if (button) {
+                    button.classList.add('disabled');
+                    button.style.opacity = '0.5';
+                    button.style.cursor = 'not-allowed';
+                    button.title = _('Not enough skull tokens');
+                }
+            }
         });
     }
 
@@ -258,11 +289,54 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     onReapSoul(): void {
+        const currentPlayerId = this['player_id'];
+        const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
+
+        if (currentPlayerTokens < 2) {
+            this.showMessage(_('You need 2 skull tokens to use Reap Soul'), 'error');
+            return;
+        }
+
         if (this.validateAction('reapSoul')) {
-            this.selectTarget((playerId: string) => {
+            // Check how many other players are available
+            const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
+
+            if (availablePlayers.length === 0) {
+                console.error('No available targets for Reap Soul');
+                return;
+            } else if (availablePlayers.length === 1) {
+                // Only one opponent, execute directly
+                const targetId = availablePlayers[0];
+                if (targetId) {
+                    this['bgaPerformAction']('reapSoul', {targetPlayerId: parseInt(targetId)});
+                }
+            } else {
+                // Multiple opponents, show target selection
+                this.showReapSoulTargetSelection();
+            }
+        }
+    }
+
+    private showReapSoulTargetSelection(): void {
+        // Clear existing action buttons
+        this['removeActionButtons']();
+
+        // Get available players
+        const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
+
+        // Add target selection buttons
+        availablePlayers.forEach((playerId) => {
+            const playerName = this['gamedatas']?.players?.[playerId]?.name || `Player ${playerId}`;
+            this['addActionButton'](`reap_target_${playerId}_btn`, playerName, () => {
                 this['bgaPerformAction']('reapSoul', {targetPlayerId: parseInt(playerId)});
             });
-        }
+        });
+
+        // Add a back button to return to main actions
+        this['addActionButton']('back_to_actions_btn', _('← Back'), () => {
+            this['removeActionButtons']();
+            this.addPlayerTurnButtons();
+        });
     }
 
     onPentagram(): void {
@@ -278,16 +352,103 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     onSatansSteal(): void {
+        const currentPlayerId = this['player_id'];
+        const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
+
+        if (currentPlayerTokens < 6) {
+            this.showMessage(_("You need 6 skull tokens to use Satan's Steal"), 'error');
+            return;
+        }
+
         if (this.validateAction('satansSteal')) {
-            this.selectTarget((playerId: string) => {
-                // TODO: Add UI for choosing whether to put in pool and face
+            // Check how many other players are available
+            const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
+
+            if (availablePlayers.length === 0) {
+                console.error("No available targets for Satan's Steal");
+                return;
+            } else if (availablePlayers.length === 1) {
+                // Only one opponent, skip target selection and go directly to decision
+                const targetId = availablePlayers[0];
+                if (targetId) {
+                    this.showSatansStealDecision(parseInt(targetId));
+                }
+            } else {
+                // Multiple opponents, show target selection first
+                this.showSatansStealTargetSelection();
+            }
+        }
+    }
+
+    private showSatansStealTargetSelection(): void {
+        // Clear existing action buttons
+        this['removeActionButtons']();
+
+        // Get available players
+        const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
+
+        // Add target selection buttons
+        availablePlayers.forEach((playerId) => {
+            const playerName = this['gamedatas']?.players?.[playerId]?.name || `Player ${playerId}`;
+            this['addActionButton'](`target_${playerId}_btn`, playerName, () => {
+                this.showSatansStealDecision(parseInt(playerId));
+            });
+        });
+
+        // Add a back button to return to main actions
+        this['addActionButton']('back_to_actions_btn', _('← Back'), () => {
+            this['removeActionButtons']();
+            this.addPlayerTurnButtons();
+        });
+    }
+
+    private showSatansStealDecision(targetPlayerId: number): void {
+        // Clear existing action buttons
+        this['removeActionButtons']();
+
+        // Add decision buttons
+        this['addActionButton']('keepDie_btn', _('Keep the stolen die'), () => {
+            this['bgaPerformAction']('satansSteal', {
+                targetPlayerId: targetPlayerId,
+                putInPool: false,
+                poolFace: '',
+            });
+        });
+
+        this['addActionButton']('putInPool_btn', _("Put die in Satan's pool"), () => {
+            this.showFaceSelection(targetPlayerId);
+        });
+    }
+
+    private showFaceSelection(targetPlayerId: number): void {
+        // Clear existing action buttons
+        this['removeActionButtons']();
+
+        // Add face selection buttons
+        const faces = [
+            {id: 'flame', label: _('Flame'), icon: '🔥'},
+            {id: 'skull', label: _('Skull'), icon: '💀'},
+            {id: 'trident', label: _('Trident'), icon: '🔱'},
+            {id: 'scythe', label: _('Scythe'), icon: '⚰️'},
+            {id: 'pentagram', label: _('Pentagram'), icon: '⭐'},
+            {id: 'imp', label: _('Imp'), icon: '👹'},
+        ];
+
+        faces.forEach((face) => {
+            this['addActionButton'](`face_${face.id}_btn`, `${face.icon} ${face.label}`, () => {
+                // This is the final decision - execute Satan's Steal with all parameters
                 this['bgaPerformAction']('satansSteal', {
-                    targetPlayerId: parseInt(playerId),
-                    putInPool: false,
-                    poolFace: null,
+                    targetPlayerId: targetPlayerId,
+                    putInPool: true,
+                    poolFace: face.id,
                 });
             });
-        }
+        });
+
+        // Add a back button to return to the main decision
+        this['addActionButton']('back_btn', _('← Back'), () => {
+            this.showSatansStealDecision(targetPlayerId);
+        });
     }
 
     onChallenge(): void {
@@ -311,36 +472,23 @@ export default class DevilsDice extends (GameGui as any) {
         // In BGA, notifications are automatically handled if the notification_* methods exist
         // We just need to make sure the methods are properly bound
 
-        // Test if we can access the notification queue
-        if (this['notifqueue']) {
-            console.log('Notification queue found:', this['notifqueue']);
-        } else {
-            console.log('No notification queue found');
-        }
-
         // Manually bind notification methods to ensure they're accessible
-        console.log('Available notification methods:');
         const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(this));
         methods
             .filter((method) => method.startsWith('notification_'))
             .forEach((method) => {
-                console.log(`Found notification method: ${method}`);
                 // Explicitly bind the method to this instance
                 if (typeof this[method] === 'function') {
                     this[method] = this[method].bind(this);
-                    console.log(`Bound method: ${method}`);
                 }
             });
 
         // Also try manual registration with dojo.subscribe as a fallback
         try {
             if (typeof dojo !== 'undefined' && dojo.subscribe) {
-                console.log('Attempting manual dojo.subscribe registration');
-
                 // Register all notifications with dojo.subscribe for maximum reliability
                 const notificationList = [
                     'message',
-                    'diceRolled',
                     'diceRerolled',
                     'diceCountUpdate',
                     'gameSetupComplete',
@@ -360,10 +508,7 @@ export default class DevilsDice extends (GameGui as any) {
 
                 notificationList.forEach((notifName) => {
                     dojo.subscribe(notifName, this, `notification_${notifName}`);
-                    console.log(`Registered dojo.subscribe: ${notifName} -> notification_${notifName}`);
                 });
-
-                console.log('Manual dojo.subscribe completed for all notifications');
             }
         } catch (e) {
             console.log('dojo.subscribe not available:', e);
@@ -396,13 +541,11 @@ export default class DevilsDice extends (GameGui as any) {
 
     notification_challengeSuccessful = (notif: {args: NotificationArgs}): void => {
         console.log('Challenge successful', notif);
-        this.showMessage(_('Challenge successful!'), 'info');
         this.updateDisplay();
     };
 
     notification_challengeFailed = (notif: {args: NotificationArgs}): void => {
         console.log('Challenge failed', notif);
-        this.showMessage(_('Challenge failed!'), 'error');
         this.updateDisplay();
     };
 
@@ -413,6 +556,15 @@ export default class DevilsDice extends (GameGui as any) {
 
     notification_diceToSatansPool = (notif: {args: NotificationArgs}): void => {
         console.log("Dice to Satan's pool", notif);
+        const face = notif.args.face;
+
+        if (face) {
+            // Add the new die to Satan's pool with a unique ID
+            const newDiceId = `pool_${Date.now()}_${Math.random()}`;
+            this.satansPool[newDiceId] = face;
+            console.log(`Added die to Satan's pool: ${newDiceId} = ${face}`);
+        }
+
         this.updateSatansPool();
     };
 
@@ -444,51 +596,24 @@ export default class DevilsDice extends (GameGui as any) {
         this.updateDisplay();
     };
 
-    notification_diceRolled = (notif: {args: NotificationArgs}): void => {
-        console.log('Dice rolled notification received:', notif);
-        const playerId = notif.args.playerId;
-        const dice = notif.args.dice || {};
-
-        console.log(`Dice rolled for player ${playerId}:`, dice);
-
-        // Update the dice count for the specific player
-        if (playerId) {
-            const diceCount = Object.keys(dice).length;
-            console.log(`Updating dice count for player ${playerId}: ${diceCount}`);
-            this.playerDiceCounts[playerId] = diceCount;
-            this.updatePlayersInfo(); // Refresh the display for all players
-        }
-
-        // If this is the current player, update their dice display
-        if (playerId === this['player_id']) {
-            console.log('Updating my dice with new data:', dice);
-            this.myDice = dice;
-            this.updateMyDice();
-            console.log('My dice updated successfully');
-        }
-    };
-
     notification_diceRerolled = (notif: {args: NotificationArgs}): void => {
         console.log('Dice rerolled notification received:', notif);
         const playerId = notif.args.playerId;
         const dice = notif.args.dice || {};
         const diceCount = notif.args.diceCount;
 
-        console.log(`Dice rerolled for player ${playerId}:`, dice, `count: ${diceCount}`);
-
         // Update the dice count for the specific player
         if (playerId && diceCount !== undefined) {
-            console.log(`Updating dice count for player ${playerId}: ${diceCount}`);
             this.playerDiceCounts[playerId] = diceCount;
             this.updatePlayersInfo(); // Refresh the display for all players
         }
 
-        // If this is the current player, update their dice display
+        // If this is the current player, update their dice display with animation
         // Convert both to strings for comparison to handle type mismatches
         if (String(playerId) === String(this['player_id']) && dice && Object.keys(dice).length > 0) {
             this.myDice = dice;
-            this.updateMyDice();
-            console.log('My dice updated successfully from diceRerolled');
+            this.updateMyDice(true); // true = animate the dice roll
+            console.log('My dice updated successfully from diceRerolled with animation');
         } else {
             console.log('NOT updating my dice because:');
             console.log(`- Player ID match: ${String(playerId) === String(this['player_id'])}`);
@@ -583,7 +708,6 @@ export default class DevilsDice extends (GameGui as any) {
                 
                 <div id="satans-pool-area">
                     <h3>${_("Satan's Pool")}</h3>
-                    <img src="${g_gamethemeurl}img/Devils_Dice_board.png" alt="Satan" class="satan-image" />
                     <div id="satans-pool"></div>
                 </div>
                 
@@ -658,24 +782,34 @@ export default class DevilsDice extends (GameGui as any) {
         }
     }
 
-    private updateMyDice(): void {
+    private updateMyDice(animate: boolean = false): void {
         const myDiceArea = this.uiElements.myDice;
         if (!myDiceArea) return;
 
         console.log('updateMyDice: myDice data structure:', this.myDice);
 
+        if (animate) {
+            // Animate dice rolling before showing final faces
+            this.animateDiceRoll(myDiceArea, this.myDice);
+        } else {
+            // Direct update without animation
+            this.setDiceDisplay(myDiceArea, this.myDice);
+        }
+    }
+
+    private setDiceDisplay(container: HTMLElement, diceData: Record<string, string>): void {
         let html = '';
-        for (const diceId in this.myDice) {
-            const diceData = this.myDice[diceId];
-            console.log(`Dice ${diceId}:`, diceData, 'Type:', typeof diceData);
+        for (const diceId in diceData) {
+            const diceValue = diceData[diceId];
+            console.log(`Dice ${diceId}:`, diceValue, 'Type:', typeof diceValue);
 
             // Handle both string face values and object structures
             let face: string;
-            if (typeof diceData === 'string') {
-                face = diceData;
-            } else if (typeof diceData === 'object' && diceData !== null) {
+            if (typeof diceValue === 'string') {
+                face = diceValue;
+            } else if (typeof diceValue === 'object' && diceValue !== null) {
                 // If it's an object, look for common face property names
-                face = (diceData as any).face || (diceData as any).dice_face || (diceData as any).value || '';
+                face = (diceValue as any).face || (diceValue as any).dice_face || (diceValue as any).value || '';
                 console.log(`Extracted face from object:`, face);
             } else {
                 face = '';
@@ -688,7 +822,79 @@ export default class DevilsDice extends (GameGui as any) {
             }
         }
 
-        myDiceArea.innerHTML = html;
+        container.innerHTML = html;
+    }
+
+    private animateDiceRoll(container: HTMLElement, finalDiceData: Record<string, string>): void {
+        const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
+        const diceElements: Record<string, HTMLElement> = {};
+
+        // Create initial dice elements
+        let html = '';
+        for (const diceId in finalDiceData) {
+            html += `<div class="die my-die rolling" data-face="flame" data-dice-id="${diceId}">
+                ${this.getDiceSymbol('flame')}
+            </div>`;
+        }
+        container.innerHTML = html;
+
+        // Cache dice elements
+        const diceNodes = container.querySelectorAll('.die');
+        const diceIds = Object.keys(finalDiceData);
+        diceNodes.forEach((element, index) => {
+            if (index < diceIds.length && diceIds[index]) {
+                diceElements[diceIds[index]] = element as HTMLElement;
+            }
+        });
+
+        // Animate through all faces
+        let currentFaceIndex = 0;
+        const animationInterval = setInterval(() => {
+            const currentFace = faces[currentFaceIndex];
+            if (!currentFace) return;
+
+            // Update all dice to show current face
+            for (const diceId in diceElements) {
+                const element = diceElements[diceId];
+                if (element) {
+                    element.setAttribute('data-face', currentFace);
+                    element.innerHTML = this.getDiceSymbol(currentFace);
+                }
+            }
+
+            currentFaceIndex++;
+
+            // After cycling through all faces, show final results
+            if (currentFaceIndex >= faces.length) {
+                clearInterval(animationInterval);
+
+                // Show final faces after a brief delay
+                setTimeout(() => {
+                    for (const diceId in diceElements) {
+                        const element = diceElements[diceId];
+                        const finalDiceValue = finalDiceData[diceId];
+
+                        if (!element || !finalDiceValue) continue;
+
+                        // Handle both string and object formats
+                        let finalFace: string;
+                        if (typeof finalDiceValue === 'string') {
+                            finalFace = finalDiceValue;
+                        } else if (typeof finalDiceValue === 'object' && finalDiceValue !== null) {
+                            finalFace = (finalDiceValue as any).face || (finalDiceValue as any).dice_face || (finalDiceValue as any).value || '';
+                        } else {
+                            finalFace = '';
+                        }
+
+                        if (finalFace) {
+                            element.setAttribute('data-face', finalFace);
+                            element.innerHTML = this.getDiceSymbol(finalFace);
+                            element.classList.remove('rolling');
+                        }
+                    }
+                }, 100);
+            }
+        }, 100); // 100ms between each face
     }
 
     private updateSatansPool(): void {
@@ -712,8 +918,6 @@ export default class DevilsDice extends (GameGui as any) {
     //// Utility Functions
 
     private getDiceSymbol(face: string): string {
-        console.log('Getting symbol for face:', face);
-
         const symbols: DiceSymbols = {
             flame: `<img src="${g_gamethemeurl}img/flame_icon.svg" alt="Flame" class="dice-icon" />`,
             pentagram: `<img src="${g_gamethemeurl}img/pentagram_icon.svg" alt="Pentagram" class="dice-icon" />`,
@@ -724,7 +928,6 @@ export default class DevilsDice extends (GameGui as any) {
         };
 
         const symbol = symbols[face] || '?';
-        console.log(`Face "${face}" mapped to symbol HTML`);
         return symbol;
     }
 
