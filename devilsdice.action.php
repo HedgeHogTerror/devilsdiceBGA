@@ -119,4 +119,15 @@ class action_devilsdice extends APP_GameAction
 		$this->game->block(  );
 		self::ajaxResponse();
 	}
+
+	public function chooseDiceOverflowFace()
+	{
+		self::setAjaxMode();
+
+		/** @var string $face */
+		$face = self::getArg('face', AT_alphanum, true);
+
+		$this->game->chooseDiceOverflowFace( $face );
+		self::ajaxResponse();
+	}
 }

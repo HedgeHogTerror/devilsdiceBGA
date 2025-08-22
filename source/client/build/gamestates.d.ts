@@ -64,6 +64,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'action': 'stResolveAction',
 		'transitions': {
 			'checkWin': 7,
+			'chooseDiceOverflowFace': 9,
 		},
 	},
 	6: {
@@ -97,6 +98,17 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'endGame': 99,
 		},
 	},
+	9: {
+		'name': 'chooseDiceOverflowFace',
+		'description': '${actplayer} must choose a face to place in Satan\'s pool',
+		'descriptionmyturn': '${you} must choose a face to place in Satan\'s pool instead of gaining a die',
+		'type': 'activeplayer',
+		'action': 'stChooseDiceOverflowFace',
+		'possibleactions': ['chooseDiceOverflowFace'],
+		'transitions': {
+			'checkWin': 7,
+		},
+	},
 	99: {
 		'name': 'gameEnd',
 		'description': 'End of game',
@@ -127,6 +139,9 @@ interface GameStatePossibleActions {
 	'challenge': {},
 	'pass': {},
 	'block': {},
+	'chooseDiceOverflowFace': {
+		'face': string,
+	},
 }
 
 }

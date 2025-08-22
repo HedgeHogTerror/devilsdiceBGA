@@ -91,7 +91,8 @@
 		"type": "game",
 		"action": "stResolveAction",
 		"transitions": { 
-			"checkWin": 7
+			"checkWin": 7,
+			"chooseDiceOverflowFace": 9
 		}
 	},
 
@@ -132,6 +133,21 @@
 		"action": "stRolloff",
 		"transitions": { 
 			"endGame": 99
+		}
+	},
+
+	// Choose dice overflow face - player must choose face for Satan's pool
+	"9": {
+		"name": "chooseDiceOverflowFace",
+		"description": "${actplayer} must choose a face to place in Satan's pool",
+		"descriptionmyturn": "${you} must choose a face to place in Satan's pool instead of gaining a die",
+		"type": "activeplayer",
+		"action": "stChooseDiceOverflowFace",
+		"possibleactions": {
+			"chooseDiceOverflowFace": [{ "name": "face", "type": "AT_alphanum" }]
+		},
+		"transitions": { 
+			"checkWin": 7
 		}
 	},
 

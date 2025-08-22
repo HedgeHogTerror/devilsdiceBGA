@@ -47,7 +47,9 @@ class Game extends \Table {
             "current_action_player" => 11,
             "current_target_player" => 12,
             "challenge_player" => 13,
-            "action_data" => 14
+            "action_data" => 14,
+            "dice_overflow_player" => 15,
+            "dice_overflow_count" => 16
         ]);
     }
 
@@ -61,6 +63,14 @@ class Game extends \Table {
      */
     private const STARTING_SKULL_TOKENS = 6;
     private const STARTING_DICE = 2;
+
+    public function argChallengeWindow() {
+        return [
+            'currentActionPlayer' => $this->getGameStateValue('current_action_player'),
+            'currentAction' => $this->getGameStateValue('current_action'),
+            'currentTargetPlayer' => $this->getGameStateValue('current_target_player')
+        ];
+    }
 
 
     /**
@@ -146,7 +156,15 @@ class Game extends \Table {
         $this->setGameStateValue('current_action', Actions::IMPS_SET);
         $this->setGameStateValue('current_action_player', $playerId);
 
-        $this->gamestate->nextState('challengeWindow');
+        // Check if player has 1 or 0 dice - if so, skip challenge window
+        $diceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+
+        if ($diceCount <= 1) {
+            // Skip challenge window and go directly to resolution
+            $this->gamestate->nextState('resolveAction');
+        } else {
+            $this->gamestate->nextState('challengeWindow');
+        }
     }
 
     public function satansSteal($targetPlayerId, $putInPool = false, $poolFace = null) {
@@ -172,6 +190,58 @@ class Game extends \Table {
 
         // Satan's Steal cannot be challenged, go directly to resolution
         $this->gamestate->nextState('resolveAction');
+    }
+
+    public function stChooseDiceOverflowFace() {
+        // State method - called when entering chooseDiceOverflowFace state
+        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+        $this->debug("DevilsDice stChooseDiceOverflowFace: overflow player is $overflowPlayer");
+
+        // The active player is automatically set by the framework to the overflow player
+        // since this is an activeplayer state and we're transitioning from a game state
+        $this->gamestate->changeActivePlayer($overflowPlayer);
+    }
+
+    public function chooseDiceOverflowFace($face) {
+        $this->checkAction('chooseDiceOverflowFace');
+        $playerId = intval($this->getCurrentPlayerId());
+
+        // Validate the face
+        $validFaces = DiceFaces::getAllFaces();
+        if (!in_array($face, $validFaces)) {
+            throw new \BgaUserException("Invalid dice face");
+        }
+
+        // Get the overflow info
+        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+        $overflowCount = $this->getGameStateValue('dice_overflow_count');
+
+        // Verify this is the correct player
+        if ($playerId != $overflowPlayer) {
+            throw new \BgaUserException("Only the player who caused the overflow can choose the face");
+        }
+
+        // Add the dice to Satan's pool instead
+        $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$face')");
+
+        // Clear overflow flags
+        $this->setGameStateValue('dice_overflow_player', 0);
+        $this->setGameStateValue('dice_overflow_count', 0);
+
+        // Send notification
+        $this->notifyAllPlayers(
+            'diceToSatansPool',
+            clienttranslate('${player} chooses ${face} to place in Satan\'s pool instead of gaining a die'),
+            [
+                'player' => $this->getPlayerNameById($playerId),
+                'playerId' => $playerId,
+                'face' => $face,
+                'dice' => $this->getPlayerDice($playerId),
+                'diceCount' => intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"))
+            ]
+        );
+
+        $this->gamestate->nextState('checkWin');
     }
 
 
@@ -251,14 +321,33 @@ class Game extends \Table {
         $actionPlayerId = $this->getGameStateValue('current_action_player');
         $currentAction = $this->getGameStateValue('current_action');
 
+        $this->debug("DevilsDice stChallengeWindow: actionPlayerId = $actionPlayerId (type: " . gettype($actionPlayerId) . ")");
+
         // Activate all players except the action player for potential challenges
         $players = $this->loadPlayersBasicInfos();
         $challengePlayers = [];
         foreach ($players as $playerId => $player) {
-            if ($playerId != $actionPlayerId) {
-                $challengePlayers[] = $playerId;
+            $this->debug("DevilsDice stChallengeWindow: Checking player $playerId (type: " . gettype($playerId) . ") vs actionPlayer $actionPlayerId");
+
+            // Use strict comparison with type casting to ensure proper comparison
+            // Also add string comparison as additional safety check
+            if (intval($playerId) !== intval($actionPlayerId) && strval($playerId) !== strval($actionPlayerId)) {
+                $challengePlayers[] = strval($playerId);
+                $this->debug("DevilsDice stChallengeWindow: Added player $playerId to challenge list");
+            } else {
+                $this->debug("DevilsDice stChallengeWindow: Excluded action player $playerId from challenge list");
             }
         }
+
+        $this->debug("DevilsDice stChallengeWindow: Final challenge players: " . json_encode($challengePlayers));
+
+        // Safety check: ensure action player is not in the challenge list
+        $actionPlayerIdStr = strval($actionPlayerId);
+        $challengePlayers = array_filter($challengePlayers, function ($playerId) use ($actionPlayerIdStr) {
+            return strval($playerId) !== $actionPlayerIdStr;
+        });
+
+        $this->debug("DevilsDice stChallengeWindow: After safety filter: " . json_encode($challengePlayers));
 
         // Determine the next state based on the action type
         $nextState = 'resolveAction';
@@ -299,6 +388,7 @@ class Game extends \Table {
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
             // Skip the challenged player's turn and move to next player
+            $this->clearActionState();
             $this->activeNextPlayer();
             $this->gamestate->nextState('playerTurn');
         } else {
@@ -326,6 +416,7 @@ class Game extends \Table {
     }
 
     public function stResolveAction() {
+        $this->debug("DevilsDice stResolveAction: executing action resolution");
 
         $actionPlayerId = $this->getGameStateValue('current_action_player');
         $currentAction = $this->getGameStateValue('current_action');
@@ -337,36 +428,42 @@ class Game extends \Table {
         switch ($currentAction) {
             case Actions::RAISE_HELL:
                 $this->executeRaiseHell($actionPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::HARVEST_SKULLS:
                 $this->executeHarvestSkulls($actionPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::EXTORT:
                 $this->executeExtort($actionPlayerId, $targetPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::REAP_SOUL:
                 $this->executeReapSoul($actionPlayerId, $targetPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::PENTAGRAM:
                 $this->executePentagram($actionPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::IMPS_SET:
                 $this->executeImpsSet($actionPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             case Actions::SATANS_STEAL:
                 $this->executeSatansSteal($actionPlayerId);
-                $this->gamestate->nextState('checkWin');
                 break;
             default:
                 $this->debug("DevilsDice: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
-                $this->gamestate->nextState('checkWin');
                 break;
+        }
+
+        // Check if there was a dice overflow during action execution
+        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+        $this->debug("DevilsDice stResolveAction: overflow check - overflowPlayer = $overflowPlayer");
+
+        if ($overflowPlayer > 0) {
+            // There was an overflow, transition to dice overflow choice
+            $this->debug("DevilsDice stResolveAction: transitioning to chooseDiceOverflowFace");
+            $this->gamestate->nextState('chooseDiceOverflowFace');
+        } else {
+            // Normal flow, continue to check win
+            $this->debug("DevilsDice stResolveAction: transitioning to checkWin");
+            $this->gamestate->nextState('checkWin');
         }
     }
 
@@ -375,7 +472,19 @@ class Game extends \Table {
 
         if (count($winners) === 1) {
             // Single winner
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $winners[0]);
+            $winnerId = $winners[0];
+            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $winnerId);
+
+            // Send win notification with confetti animation
+            $this->notifyAllPlayers(
+                'gameWon',
+                clienttranslate('${player} wins the game!'),
+                [
+                    'player' => $this->getPlayerNameById($winnerId),
+                    'winnerId' => strval($winnerId)
+                ]
+            );
+
             $this->gamestate->nextState('endGame');
         } else if (count($winners) > 1) {
             // Tie - need rolloff
@@ -383,6 +492,7 @@ class Game extends \Table {
             $this->gamestate->nextState('rolloff');
         } else {
             // No winner yet, continue game
+            $this->clearActionState();
             $this->activeNextPlayer();
             $this->gamestate->nextState('playerTurn');
         }
@@ -403,20 +513,41 @@ class Game extends \Table {
         }));
 
         if (count($finalWinners) === 1) {
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $finalWinners[0]);
+            $winnerId = $finalWinners[0];
+            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $winnerId);
             $this->notifyAllPlayers(
                 'rolloffWinner',
                 clienttranslate('${player} wins the rolloff with ${imps} imps'),
                 [
-                    'player' => $this->getPlayerNameById($finalWinners[0]),
+                    'player' => $this->getPlayerNameById($winnerId),
                     'imps' => $maxImps,
-                    'playerId' => $finalWinners[0]
+                    'playerId' => $winnerId
+                ]
+            );
+
+            // Send win notification with confetti animation
+            $this->notifyAllPlayers(
+                'gameWon',
+                clienttranslate('${player} wins the game!'),
+                [
+                    'player' => $this->getPlayerNameById($winnerId),
+                    'winnerId' => strval($winnerId)
                 ]
             );
         } else {
             // Still tied, pick first player arbitrarily
             $winner = $finalWinners[0];
             $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winner");
+
+            // Send win notification with confetti animation
+            $this->notifyAllPlayers(
+                'gameWon',
+                clienttranslate('${player} wins the game!'),
+                [
+                    'player' => $this->getPlayerNameById($winner),
+                    'winnerId' => strval($winner)
+                ]
+            );
         }
 
         $this->gamestate->nextState('endGame');
@@ -425,6 +556,15 @@ class Game extends \Table {
     /**
      * Helper methods
      */
+
+    private function clearActionState() {
+        // Clear action-related game state values when starting a new turn
+        $this->setGameStateValue('current_action', 0);
+        $this->setGameStateValue('current_action_player', 0);
+        $this->setGameStateValue('current_target_player', 0);
+        $this->setGameStateValue('challenge_player', 0);
+        $this->setGameStateValue('action_data', '');
+    }
 
     /**
      * Reroll all existing dice for a player and send notification
@@ -510,6 +650,16 @@ class Game extends \Table {
      */
     private function addOrRemoveDice($playerId, $count) {
         $current = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+
+        // Check for dice overflow when adding dice
+        if ($count > 0 && $current >= 6) {
+            // Player already has 6 dice, set flag for overflow handling
+            $this->setGameStateValue('dice_overflow_player', $playerId);
+            $this->setGameStateValue('dice_overflow_count', $count);
+            $this->debug("DevilsDice addOrRemoveDice: Player $playerId at dice limit, setting overflow flag");
+            return; // Don't add dice to player, let stResolveAction handle overflow
+        }
+
         $newCount = max(0, $current + $count); // Ensure we don't go below 0
 
         // Delete existing dice
@@ -531,46 +681,50 @@ class Game extends \Table {
     }
 
     private function stealDiceFromPlayer($stealerId, $victimId) {
-        // Get a random die from victim
-        $victimDice = $this->getCollectionFromDb(
-            "SELECT dice_id FROM player_dice WHERE player_id = $victimId AND location = 'hand' LIMIT 1"
+        // Check if stealer would overflow before stealing
+        $stealerCurrent = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $stealerId AND location = 'hand'"));
+
+        if ($stealerCurrent >= 6) {
+            // Stealer would overflow, set flags and only remove from victim
+            $this->setGameStateValue('dice_overflow_player', $stealerId);
+            $this->setGameStateValue('dice_overflow_count', 1);
+            $this->debug("DevilsDice stealDiceFromPlayer: Stealer $stealerId at dice limit, setting overflow flag");
+            $this->addOrRemoveDice($victimId, -1); // Remove one die from victim
+        } else {
+            // Normal steal - add to stealer, remove from victim
+            $this->addOrRemoveDice($stealerId, 1); // Add one die to stealer
+            $this->addOrRemoveDice($victimId, -1); // Remove one die from victim
+        }
+
+        $this->notifyAllPlayers(
+            'diceStolen',
+            clienttranslate('${stealer} steals a die from ${victim}'),
+            [
+                'stealer' => $this->getPlayerNameById($stealerId),
+                'victim' => $this->getPlayerNameById($victimId),
+                'stealerId' => $stealerId,
+                'victimId' => $victimId
+            ]
         );
 
-        if (!empty($victimDice)) {
-            $diceId = array_keys($victimDice)[0];
-            $this->DbQuery("UPDATE player_dice SET player_id = $stealerId WHERE dice_id = $diceId");
-
-            $this->notifyAllPlayers(
-                'diceStolen',
-                clienttranslate('${stealer} steals a die from ${victim}'),
-                [
-                    'stealer' => $this->getPlayerNameById($stealerId),
-                    'victim' => $this->getPlayerNameById($victimId),
-                    'stealerId' => $stealerId,
-                    'victimId' => $victimId
-                ]
-            );
-
-            // Reroll dice for both players - let frontend handle animation sequencing
-            $this->rollDiceForPlayer($stealerId);
-            $this->rollDiceForPlayer($victimId);
-        }
+        // Reroll dice for both players - let frontend handle animation sequencing
+        $this->rollDiceForPlayer($stealerId);
+        $this->rollDiceForPlayer($victimId);
     }
 
     private function moveDiceToSatansPool($playerId, $face = null) {
-        // Get a random die from player
-
-        // Remove from player and add to Satan's pool
-        $this->addOrRemoveDice($playerId, -1);
+        $finalFace = null;
         if ($face === null) {
             // Roll the die and add to Satan's pool
             $faces = DiceFaces::getAllFaces();
-            $newFace = $faces[array_rand($faces)];
-            $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$newFace')");
+            $finalFace = $faces[array_rand($faces)];
+            $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$finalFace')");
         } else {
             // Use the provided face
+            $finalFace = $face;
             $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$face')");
         }
+        $this->addOrRemoveDice($playerId, -1); // Remove one die from player
 
         $this->notifyAllPlayers(
             'diceToSatansPool',
@@ -578,11 +732,9 @@ class Game extends \Table {
             [
                 'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId,
-                'face' => $newFace
+                'face' => $finalFace,
             ]
         );
-
-        $this->addOrRemoveDice($playerId, -1);
     }
 
     private function executeRaiseHell($playerId) {
@@ -656,6 +808,9 @@ class Game extends \Table {
         // Pay 2 skull tokens
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
 
+        // Steal a die from target
+        $this->stealDiceFromPlayer($playerId, $targetId);
+
         $this->notifyAllPlayers(
             'reapSoul',
             clienttranslate('${player} reaps a soul from ${target}'),
@@ -666,9 +821,6 @@ class Game extends \Table {
                 'targetId' => $targetId
             ]
         );
-
-        // Steal a die from target
-        $this->stealDiceFromPlayer($playerId, $targetId);
     }
 
     private function executePentagram($playerId) {
@@ -676,6 +828,7 @@ class Game extends \Table {
         $poolDice = $this->getCollectionFromDb("SELECT dice_id FROM satans_pool");
         $faces = DiceFaces::getAllFaces();
         $pentagramsRolled = 0;
+        $pentagramDiceIds = [];
 
         // Reroll each die in Satan's pool
         foreach ($poolDice as $diceId => $dice) {
@@ -684,26 +837,38 @@ class Game extends \Table {
 
             if ($newFace === DiceFaces::PENTAGRAM) {
                 $pentagramsRolled++;
+                $pentagramDiceIds[] = $diceId;
             }
         }
 
-        // Gain up to 1 pentagram
+        // Remove pentagram dice from Satan's pool (player gains up to 1)
         if ($pentagramsRolled > 0) {
+            // Remove the first pentagram die from Satan's pool
+            $diceIdToRemove = $pentagramDiceIds[0];
+            $this->DbQuery("DELETE FROM satans_pool WHERE dice_id = $diceIdToRemove");
+
+            // Add 1 die to player with pentagram face (check for overflow)
+            $this->addOrRemoveDice($playerId, 1);
 
             // Set the new die to pentagram
             $this->DbQuery("UPDATE player_dice SET face = '" . DiceFaces::PENTAGRAM . "' WHERE player_id = $playerId AND location = 'hand' ORDER BY dice_id DESC LIMIT 1");
+        }
 
+        // Get the updated Satan's pool data for the notification (after removing pentagram)
+        $updatedSatansPool = $this->getCollectionFromDb("SELECT dice_id, face FROM satans_pool");
+
+        // Send notification
+        if ($pentagramsRolled > 0) {
             $this->notifyAllPlayers(
                 'pentagram',
                 clienttranslate('${player} rerolls Satan\'s pool and gains one pentagram dice'),
                 [
                     'player' => $this->getPlayerNameById($playerId),
                     'playerId' => $playerId,
-                    'pentagrams' => 1
+                    'pentagrams' => 1,
+                    'satansPool' => $updatedSatansPool
                 ]
             );
-
-            $this->addOrRemoveDice($playerId, 1);
         } else {
             $this->notifyAllPlayers(
                 'pentagram',
@@ -711,7 +876,8 @@ class Game extends \Table {
                 [
                     'player' => $this->getPlayerNameById($playerId),
                     'playerId' => $playerId,
-                    'pentagrams' => 0
+                    'pentagrams' => 0,
+                    'satansPool' => $updatedSatansPool
                 ]
             );
         }
@@ -727,7 +893,7 @@ class Game extends \Table {
             ]
         );
 
-        // Add 1 die and reroll all dice
+        // Add 1 die and reroll all dice (check for overflow)
         $this->addOrRemoveDice($playerId, 1);
     }
 
@@ -748,24 +914,28 @@ class Game extends \Table {
         // Pay 6 skull tokens
         $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 6 WHERE player_id = $playerId");
 
-        $this->notifyAllPlayers(
-            'satansSteal',
-            clienttranslate('${player} uses Satan\'s Steal on ${target} and rerolls their dice'),
-            [
-                'player' => $this->getPlayerNameById($playerId),
-                'target' => $this->getPlayerNameById($targetId),
-                'playerId' => $playerId,
-                'targetId' => $targetId
-            ]
-        );
+        // Get updated token count for the player
+        $playerNewTokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
 
         // Optionally put it in Satan's pool on chosen face
         if ($putInPool && $poolFace) {
             $this->moveDiceToSatansPool($targetId, $poolFace);
         } else {
-            // Steal a die from target
-            $this->stealDiceFromPlayer($targetId, $targetId);
+            // Steal a die from target (correct parameter order: stealer, victim)
+            $this->stealDiceFromPlayer($playerId, $targetId);
         }
+
+        $this->notifyAllPlayers(
+            'satansSteal',
+            clienttranslate('${player} uses Satan\'s Steal on ${target}'),
+            [
+                'player' => $this->getPlayerNameById($playerId),
+                'target' => $this->getPlayerNameById($targetId),
+                'playerId' => $playerId,
+                'targetId' => $targetId,
+                'playerNewTokens' => $playerNewTokens
+            ]
+        );
     }
 
     private function checkForWinners() {

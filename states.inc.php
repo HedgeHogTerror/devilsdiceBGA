@@ -23,6 +23,7 @@ if (false) {
 	$game->stResolveAction();
 	$game->stCheckWin();
 	$game->stRolloff();
+	$game->stChooseDiceOverflowFace();
 }
 
 $machinestates = array(
@@ -78,6 +79,7 @@ $machinestates = array(
 		'action' => 'stResolveAction',
 		'transitions' => array(
 			'checkWin' => 7,
+			'chooseDiceOverflowFace' => 9,
 		),
 	),
 	6 => array(
@@ -109,6 +111,17 @@ $machinestates = array(
 		'action' => 'stRolloff',
 		'transitions' => array(
 			'endGame' => 99,
+		),
+	),
+	9 => array(
+		'name' => 'chooseDiceOverflowFace',
+		'description' => clienttranslate('${actplayer} must choose a face to place in Satan's pool'),
+		'descriptionmyturn' => clienttranslate('${you} must choose a face to place in Satan's pool instead of gaining a die'),
+		'type' => 'activeplayer',
+		'action' => 'stChooseDiceOverflowFace',
+		'possibleactions' => ['chooseDiceOverflowFace'],
+		'transitions' => array(
+			'checkWin' => 7,
 		),
 	),
 	99 => array(

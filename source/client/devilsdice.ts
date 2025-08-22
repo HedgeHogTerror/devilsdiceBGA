@@ -30,6 +30,8 @@ interface NotificationArgs {
     face?: string;
     pentagrams?: number;
     imps?: number;
+    satansPool?: Record<string, string>;
+    winnerId?: string;
 }
 
 interface DiceSymbols {
@@ -51,6 +53,10 @@ const GAME_STATES = {
     CHALLENGE_WINDOW: 'challengeWindow',
     BLOCK_WINDOW: 'blockWindow',
     SATANS_STEAL_DECISION: 'satansStealDecision',
+    CHOOSE_DICE_OVERFLOW_FACE: 'chooseDiceOverflowFace',
+    ROLLOFF: 'rolloff',
+    GAME_WON: 'gameWon',
+    GAME_SETUP_COMPLETE: 'gameSetupComplete',
 } as const;
 
 /**
@@ -189,10 +195,20 @@ export default class DevilsDice extends (GameGui as any) {
                 this.addPlayerTurnButtons();
                 break;
             case GAME_STATES.CHALLENGE_WINDOW:
-                this.addChallengeButtons();
+                // Only show challenge buttons if this player is NOT the action player
+                console.log('Args for challenge window:', args);
+                if (!this.isActionPlayer(args)) {
+                    console.log('Player is NOT action player - showing challenge buttons');
+                    this.addChallengeButtons();
+                } else {
+                    console.log('Player IS action player - NOT showing challenge buttons');
+                }
                 break;
             case GAME_STATES.BLOCK_WINDOW:
                 this.addBlockButtons();
+                break;
+            case GAME_STATES.CHOOSE_DICE_OVERFLOW_FACE:
+                this.addDiceOverflowButtons();
                 break;
         }
     }
@@ -263,6 +279,24 @@ export default class DevilsDice extends (GameGui as any) {
     private addBlockButtons(): void {
         this['addActionButton']('block_btn', _('Block'), 'onBlock');
         this['addActionButton']('pass_btn', _('Pass'), 'onPass');
+    }
+
+    private addDiceOverflowButtons(): void {
+        // Add face selection buttons for Satan's pool
+        const faces = [
+            {id: 'flame', label: _('Flame'), icon: '🔥'},
+            {id: 'skull', label: _('Skull'), icon: '💀'},
+            {id: 'trident', label: _('Trident'), icon: '🔱'},
+            {id: 'scythe', label: _('Scythe'), icon: '⚰️'},
+            {id: 'pentagram', label: _('Pentagram'), icon: '⭐'},
+            {id: 'imp', label: _('Imp'), icon: '👹'},
+        ];
+
+        faces.forEach((face) => {
+            this['addActionButton'](`overflow_${face.id}_btn`, `${face.icon} ${face.label}`, () => {
+                this['bgaPerformAction']('chooseDiceOverflowFace', {face: face.id});
+            });
+        });
     }
 
     ///////////////////////////////////////////////////
@@ -504,6 +538,7 @@ export default class DevilsDice extends (GameGui as any) {
                     'impsSet',
                     'satansSteal',
                     'rolloffWinner',
+                    'gameWon',
                 ];
 
                 notificationList.forEach((notifName) => {
@@ -524,7 +559,6 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     notification_diceCountUpdate = (notif: {args: NotificationArgs}): void => {
-        console.log('Dice count update notification', notif);
         const playerId = notif.args.playerId;
         const diceCount = notif.args.diceCount;
 
@@ -557,6 +591,7 @@ export default class DevilsDice extends (GameGui as any) {
     notification_diceToSatansPool = (notif: {args: NotificationArgs}): void => {
         console.log("Dice to Satan's pool", notif);
         const face = notif.args.face;
+        const playerId = notif.args.playerId;
 
         if (face) {
             // Add the new die to Satan's pool with a unique ID
@@ -565,11 +600,12 @@ export default class DevilsDice extends (GameGui as any) {
             console.log(`Added die to Satan's pool: ${newDiceId} = ${face}`);
         }
 
+        this.updateMyDice(true); // true = animate the dice roll
         this.updateSatansPool();
+        this.updatePlayersInfo(); // Update dice counts for all players
     };
 
     notification_raiseHell = (notif: {args: NotificationArgs}): void => {
-        console.log('Raise Hell action notification received:', notif);
         const playerId = notif.args.playerId;
         const tokens = notif.args.tokens;
         const diceCount = notif.args.diceCount;
@@ -592,7 +628,6 @@ export default class DevilsDice extends (GameGui as any) {
 
         // If this is the current player, we need to wait for the diceRolled notification
         // to get the new dice data, but let's update the display now for the token changes
-        console.log('Calling updateDisplay() after Raise Hell');
         this.updateDisplay();
     };
 
@@ -634,8 +669,6 @@ export default class DevilsDice extends (GameGui as any) {
             this.playerTokens[playerId] = tokens;
             console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
         }
-
-        console.log('Calling updateDisplay() after Harvest Skulls');
         this.updateDisplay();
     };
 
@@ -672,7 +705,13 @@ export default class DevilsDice extends (GameGui as any) {
 
     notification_pentagram = (notif: {args: NotificationArgs}): void => {
         console.log('Pentagram action', notif);
-        this.updateDisplay();
+
+        // Update Satan's pool with animation if provided
+        if (notif.args.satansPool) {
+            this['animateSatansPoolReroll'](notif.args.satansPool);
+        } else {
+            this.updateDisplay();
+        }
     };
 
     notification_impsSet = (notif: {args: NotificationArgs}): void => {
@@ -681,13 +720,37 @@ export default class DevilsDice extends (GameGui as any) {
     };
 
     notification_satansSteal = (notif: {args: NotificationArgs}): void => {
-        console.log("Satan's Steal action", notif);
+        console.log("Satan's Steal action notification received:", notif);
+        const playerId = notif.args.playerId;
+        const playerNewTokens = notif.args.playerNewTokens;
+
+        console.log(`Updating Satan's Steal - Player ${playerId}: ${playerNewTokens} tokens`);
+
+        // Update player's token count
+        if (playerId && playerNewTokens !== undefined) {
+            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+            this.playerTokens[playerId] = playerNewTokens;
+            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
+        }
+
+        console.log("Calling updateDisplay() after Satan's Steal");
         this.updateDisplay();
     };
 
     notification_rolloffWinner = (notif: {args: NotificationArgs}): void => {
         console.log('Rolloff winner', notif);
         this.showMessage(_('Rolloff completed!'), 'info');
+    };
+
+    notification_gameWon = (notif: {args: NotificationArgs}): void => {
+        console.log('Game won notification received:', notif);
+        const winnerId = notif.args.winnerId;
+
+        // Trigger confetti animation
+        this['playConfettiAnimation']();
+
+        // Show win message
+        this.showMessage(_('Game Over!'), 'success');
     };
 
     ///////////////////////////////////////////////////
@@ -801,8 +864,6 @@ export default class DevilsDice extends (GameGui as any) {
         let html = '';
         for (const diceId in diceData) {
             const diceValue = diceData[diceId];
-            console.log(`Dice ${diceId}:`, diceValue, 'Type:', typeof diceValue);
-
             // Handle both string face values and object structures
             let face: string;
             if (typeof diceValue === 'string') {
@@ -810,7 +871,6 @@ export default class DevilsDice extends (GameGui as any) {
             } else if (typeof diceValue === 'object' && diceValue !== null) {
                 // If it's an object, look for common face property names
                 face = (diceValue as any).face || (diceValue as any).dice_face || (diceValue as any).value || '';
-                console.log(`Extracted face from object:`, face);
             } else {
                 face = '';
             }
@@ -914,6 +974,103 @@ export default class DevilsDice extends (GameGui as any) {
         satansPoolArea.innerHTML = html;
     }
 
+    private animateSatansPoolReroll(newSatansPool: Record<string, string>): void {
+        console.log("Animating Satan's pool reroll with new data:", newSatansPool);
+
+        const satansPoolArea = this.uiElements.satansPool;
+        if (!satansPoolArea) {
+            console.error("Satan's pool area not found");
+            return;
+        }
+
+        // Convert Satan's pool data from backend format to frontend format
+        const convertedSatansPool: Record<string, string> = {};
+        if (newSatansPool) {
+            console.log("Raw Satan's pool data from notification:", newSatansPool);
+
+            // Handle both formats: direct key-value pairs or array of objects
+            for (const [key, entry] of Object.entries(newSatansPool)) {
+                if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
+                    // Format: {dice_id: "1", face: "imp"}
+                    const diceEntry = entry as {dice_id: string; face: string};
+                    convertedSatansPool[diceEntry.dice_id] = diceEntry.face;
+                    console.log(`Converted Satan's pool die ${diceEntry.dice_id}: ${diceEntry.face}`);
+                } else if (typeof entry === 'string') {
+                    // Format: {"1": "imp"}
+                    convertedSatansPool[key] = entry;
+                    console.log(`Direct Satan's pool die ${key}: ${entry}`);
+                }
+            }
+        }
+
+        // Update our internal data
+        this.satansPool = convertedSatansPool;
+
+        // If there are no dice in Satan's pool, just update normally
+        if (Object.keys(convertedSatansPool).length === 0) {
+            this.updateSatansPool();
+            return;
+        }
+
+        const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
+        const diceElements: Record<string, HTMLElement> = {};
+
+        // Create initial dice elements for animation
+        let html = '';
+        for (const diceId in convertedSatansPool) {
+            html += `<div class="die pool-die rolling" data-face="flame" data-dice-id="${diceId}">
+                ${this.getDiceSymbol('flame')}
+            </div>`;
+        }
+        satansPoolArea.innerHTML = html;
+
+        // Cache dice elements
+        const diceNodes = satansPoolArea.querySelectorAll('.die');
+        const diceIds = Object.keys(convertedSatansPool);
+        diceNodes.forEach((element, index) => {
+            if (index < diceIds.length && diceIds[index]) {
+                diceElements[diceIds[index]] = element as HTMLElement;
+            }
+        });
+
+        // Animate through all faces
+        let currentFaceIndex = 0;
+        const animationInterval = setInterval(() => {
+            const currentFace = faces[currentFaceIndex];
+            if (!currentFace) return;
+
+            // Update all dice to show current face
+            for (const diceId in diceElements) {
+                const element = diceElements[diceId];
+                if (element) {
+                    element.setAttribute('data-face', currentFace);
+                    element.innerHTML = this.getDiceSymbol(currentFace);
+                }
+            }
+
+            currentFaceIndex++;
+
+            // After cycling through all faces, show final results
+            if (currentFaceIndex >= faces.length) {
+                clearInterval(animationInterval);
+
+                // Show final faces after a brief delay
+                setTimeout(() => {
+                    for (const diceId in diceElements) {
+                        const element = diceElements[diceId];
+                        const finalFace = convertedSatansPool[diceId];
+
+                        if (element && finalFace) {
+                            element.setAttribute('data-face', finalFace);
+                            element.innerHTML = this.getDiceSymbol(finalFace);
+                            element.classList.remove('rolling');
+                        }
+                    }
+                }, 100);
+            }
+        }, 100); // 100ms between each face
+    }
+
     ///////////////////////////////////////////////////
     //// Utility Functions
 
@@ -957,6 +1114,37 @@ export default class DevilsDice extends (GameGui as any) {
         // Add client-side validation logic here
         // For now, just return true
         return true;
+    }
+
+    private isActionPlayer(stateArgs?: any): boolean {
+        // Check if the current player is the one who declared the action
+        const gamedatas = this['gamedatas'] as GameData;
+
+        console.log('isActionPlayer: Full gamedatas object:', gamedatas);
+        console.log('isActionPlayer: currentActionPlayer value:', gamedatas?.currentActionPlayer);
+        console.log('isActionPlayer: type of currentActionPlayer:', typeof gamedatas?.currentActionPlayer);
+        console.log('isActionPlayer: stateArgs:', stateArgs);
+
+        // Try to get action player from state args first, then fallback to gamedatas
+        let actionPlayerId: string | number | undefined;
+
+        if (stateArgs && (stateArgs.currentActionPlayer !== undefined || stateArgs.actionPlayerId !== undefined)) {
+            actionPlayerId = stateArgs.currentActionPlayer || stateArgs.actionPlayerId;
+            console.log('isActionPlayer: Found actionPlayerId in stateArgs:', actionPlayerId);
+        } else if (gamedatas && gamedatas.currentActionPlayer !== undefined && gamedatas.currentActionPlayer !== null) {
+            actionPlayerId = gamedatas.currentActionPlayer;
+            console.log('isActionPlayer: Found actionPlayerId in gamedatas:', actionPlayerId);
+        } else {
+            console.log('isActionPlayer: No currentActionPlayer found in either stateArgs or gamedatas');
+            return false;
+        }
+
+        const currentPlayerId = String(this['player_id']);
+        const actionPlayerIdStr = String(actionPlayerId);
+        const isAction = currentPlayerId === actionPlayerIdStr;
+
+        console.log(`isActionPlayer check: currentPlayer=${currentPlayerId}, actionPlayer=${actionPlayerIdStr}, isActionPlayer=${isAction}`);
+        return isAction;
     }
 
     private updateUIForState(stateName: string): void {
@@ -1014,6 +1202,94 @@ export default class DevilsDice extends (GameGui as any) {
         // Use BGA's built-in message system
         console.log(`${type.toUpperCase()}: ${message}`);
         // You could also use this.showMessage() if available in the BGA framework
+    }
+
+    ///////////////////////////////////////////////////
+    //// Confetti Animation
+
+    private playConfettiAnimation(): void {
+        console.log('Playing confetti animation!');
+
+        // Create confetti container
+        const confettiContainer = document.createElement('div');
+        confettiContainer.id = 'confetti-container';
+        confettiContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+            overflow: hidden;
+        `;
+        document.body.appendChild(confettiContainer);
+
+        // Create multiple confetti pieces
+        const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3', '#54a0ff'];
+        const confettiCount = 100;
+
+        for (let i = 0; i < confettiCount; i++) {
+            setTimeout(() => {
+                this.createConfettiPiece(confettiContainer, colors);
+            }, i * 50); // Stagger the creation
+        }
+
+        // Remove confetti container after animation
+        setTimeout(() => {
+            if (confettiContainer && confettiContainer.parentNode) {
+                confettiContainer.parentNode.removeChild(confettiContainer);
+            }
+        }, 5000);
+    }
+
+    private createConfettiPiece(container: HTMLElement, colors: string[]): void {
+        const confetti = document.createElement('div');
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const size = Math.random() * 10 + 5; // 5-15px
+        const startX = Math.random() * window.innerWidth;
+        const rotation = Math.random() * 360;
+        const duration = Math.random() * 3000 + 2000; // 2-5 seconds
+
+        confetti.style.cssText = `
+            position: absolute;
+            width: ${size}px;
+            height: ${size}px;
+            background-color: ${color};
+            top: -10px;
+            left: ${startX}px;
+            transform: rotate(${rotation}deg);
+            border-radius: ${Math.random() > 0.5 ? '50%' : '0'};
+        `;
+
+        container.appendChild(confetti);
+
+        // Animate the confetti falling
+        const fallDistance = window.innerHeight + 20;
+        const horizontalDrift = (Math.random() - 0.5) * 200; // -100 to 100px drift
+        const rotationEnd = rotation + (Math.random() * 720 - 360); // Random rotation
+
+        confetti.animate(
+            [
+                {
+                    transform: `translate(0, 0) rotate(${rotation}deg)`,
+                    opacity: 1,
+                },
+                {
+                    transform: `translate(${horizontalDrift}px, ${fallDistance}px) rotate(${rotationEnd}deg)`,
+                    opacity: 0,
+                },
+            ],
+            {
+                duration: duration,
+                easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                fill: 'forwards',
+            }
+        ).onfinish = () => {
+            if (confetti && confetti.parentNode) {
+                confetti.parentNode.removeChild(confetti);
+            }
+        };
     }
 }
 
