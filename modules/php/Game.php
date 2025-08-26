@@ -214,7 +214,6 @@ class Game extends \Table {
 
         // Get the overflow info
         $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
-        $overflowCount = $this->getGameStateValue('dice_overflow_count');
 
         // Verify this is the correct player
         if ($playerId != $overflowPlayer) {
@@ -275,16 +274,29 @@ class Game extends \Table {
         $this->checkAction('pass');
         $playerId = intval($this->getCurrentPlayerId());
 
+        // DEBUG: Log current state and player info
+        $currentState = $this->gamestate->state();
+        $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
+        $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
+        $this->debug("DevilsDice pass(): Player $playerId passing in state $stateId ($stateName)");
+
         // Player passes on challenge or block opportunity
-        $stateName = $this->gamestate->state()['name'];
+        // $stateName already set above with safety check
 
         if ($stateName === 'challengeWindow') {
             // In multipleactiveplayer state, just make this player inactive
             // The BGA framework will automatically transition when all players have acted
+            $this->debug("DevilsDice pass(): Setting player $playerId non-multiactive, will transition to resolveAction");
             $this->gamestate->setPlayerNonMultiactive($playerId, 'resolveAction');
+            $this->debug("DevilsDice pass(): Player $playerId set non-multiactive");
         } else if ($stateName === 'blockWindow') {
             // Single player block window - can transition immediately
+            $this->debug("DevilsDice pass(): Player $playerId not blocking, transitioning to resolveAction");
             $this->gamestate->nextState('resolveAction');
+            $this->debug("DevilsDice pass(): Transition to resolveAction completed");
+        } else {
+            $this->debug("DevilsDice pass(): Cannot pass in current state: $stateName");
+            throw new \BgaUserException("Cannot pass in current state: $stateName");
         }
     }
 
@@ -355,7 +367,9 @@ class Game extends \Table {
             $nextState = 'blockWindow';
         }
 
+        $this->debug("DevilsDice stChallengeWindow: Setting players multiactive with next state: $nextState");
         $this->gamestate->setPlayersMultiactive($challengePlayers, $nextState);
+        $this->debug("DevilsDice stChallengeWindow: setPlayersMultiactive completed");
     }
 
     public function stResolveChallenge() {
@@ -452,22 +466,56 @@ class Game extends \Table {
                 break;
         }
 
-        // Check if there was a dice overflow during action execution
-        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
-        $this->debug("DevilsDice stResolveAction: overflow check - overflowPlayer = $overflowPlayer");
+        // DEBUG: Log current state before transition logic
+        $currentState = $this->gamestate->state();
+        $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
+        $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
+        $stateType = isset($currentState['type']) ? $currentState['type'] : 'unknown';
+        $this->debug("DevilsDice stResolveAction: Current state info - ID: $stateId, Name: $stateName, Type: $stateType");
 
-        if ($overflowPlayer > 0) {
-            // There was an overflow, transition to dice overflow choice
-            $this->debug("DevilsDice stResolveAction: transitioning to chooseDiceOverflowFace");
-            $this->gamestate->nextState('chooseDiceOverflowFace');
-        } else {
-            // Normal flow, continue to check win
-            $this->debug("DevilsDice stResolveAction: transitioning to checkWin");
-            $this->gamestate->nextState('checkWin');
-        }
+        // Always transition to checkWin - overflow detection will happen there
+        $this->debug("DevilsDice stResolveAction: transitioning to checkWin");
+        $this->gamestate->nextState('checkWin');
     }
 
     public function stCheckWin() {
+        // First, check for pending overflow from action execution
+        $actionDataJson = $this->getGameStateValue('action_data');
+        $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
+        $this->debug("DevilsDice stCheckWin: Checking for pending overflow - Action data: " . ($actionDataJson ? $actionDataJson : 'empty'));
+
+        if (isset($actionData['pending_overflow'])) {
+            // There was a pending overflow, set flags and transition to overflow choice
+            $pendingOverflow = $actionData['pending_overflow'];
+            $this->debug("DevilsDice stCheckWin: Found pending overflow - Player: " . $pendingOverflow['player'] . ", Count: " . $pendingOverflow['count']);
+
+            $this->setGameStateValue('dice_overflow_player', $pendingOverflow['player']);
+            $this->setGameStateValue('dice_overflow_count', $pendingOverflow['count']);
+
+            // Clear pending overflow from action data
+            unset($actionData['pending_overflow']);
+            $this->setGameStateValue('action_data', json_encode($actionData));
+
+            $this->debug("DevilsDice stCheckWin: Setting active player to " . $pendingOverflow['player']);
+            $this->gamestate->changeActivePlayer($pendingOverflow['player']);
+            $this->debug("DevilsDice stCheckWin: Transitioning to chooseDiceOverflowFace");
+            $this->gamestate->nextState('chooseDiceOverflowFace');
+            return;
+        }
+
+        // Check legacy overflow flags (for backwards compatibility)
+        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+        if ((int)$overflowPlayer > 0) {
+            $this->debug("DevilsDice stCheckWin: Found legacy overflow player $overflowPlayer");
+            $this->debug("DevilsDice stCheckWin: Setting active player to $overflowPlayer");
+            $this->gamestate->changeActivePlayer((int)$overflowPlayer);
+            $this->debug("DevilsDice stCheckWin: Transitioning to chooseDiceOverflowFace");
+            $this->gamestate->nextState('chooseDiceOverflowFace');
+            return;
+        }
+
+        // No overflow, proceed with normal win checking
+        $this->debug("DevilsDice stCheckWin: No overflow found, checking for winners");
         $winners = $this->checkForWinners();
 
         if (count($winners) === 1) {
@@ -499,7 +547,7 @@ class Game extends \Table {
     }
 
     public function stRolloff() {
-        $winners = json_decode($this->getGameStateValue('action_data'), true);
+        $winners = json_decode((string)$this->getGameStateValue('action_data'), true);
 
         $rolloffResults = [];
         foreach ($winners as $playerId) {
@@ -651,12 +699,17 @@ class Game extends \Table {
     private function addOrRemoveDice($playerId, $count) {
         $current = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
 
-        // Check for dice overflow when adding dice
+        // Check for dice overflow when adding dice - store as pending instead of immediate flag
         if ($count > 0 && $current >= 6) {
-            // Player already has 6 dice, set flag for overflow handling
-            $this->setGameStateValue('dice_overflow_player', $playerId);
-            $this->setGameStateValue('dice_overflow_count', $count);
-            $this->debug("DevilsDice addOrRemoveDice: Player $playerId at dice limit, setting overflow flag");
+            // Player already has 6 dice, store pending overflow for later processing
+            $existingData = $this->getGameStateValue('action_data');
+            $actionData = $existingData ? json_decode((string)$existingData, true) : [];
+            $actionData['pending_overflow'] = [
+                'player' => $playerId,
+                'count' => $count
+            ];
+            $this->setGameStateValue('action_data', json_encode($actionData));
+            $this->debug("DevilsDice addOrRemoveDice: Player $playerId at dice limit, storing pending overflow");
             return; // Don't add dice to player, let stResolveAction handle overflow
         }
 
@@ -1015,6 +1068,7 @@ class Game extends \Table {
 
         throw new \feException("Zombie mode not supported at this game state: \"{$stateName}\".");
     }
+
 
     /**
      * Migrate database.

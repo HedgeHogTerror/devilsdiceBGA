@@ -102,6 +102,7 @@ $machinestates = array(
 			'rolloff' => 8,
 			'playerTurn' => 2,
 			'endGame' => 99,
+			'chooseDiceOverflowFace' => 9,
 		),
 	),
 	8 => array(
