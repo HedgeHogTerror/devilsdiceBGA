@@ -27,6 +27,8 @@ namespace Bga\Games\DevilsDice;
 require_once(APP_GAMEMODULE_PATH . "module/table/table.game.php");
 require_once("autoload.php");
 require_once("Constants.inc.php");
+require_once("DiceValidator.php");
+require_once("GameValidator.php");
 
 class Game extends \Table {
     /**
@@ -37,7 +39,7 @@ class Game extends \Table {
      * label to the corresponding ID in `gameoptions.inc.php`.
      *
      * NOTE: afterward, you can get/set the global variables with `getGameStateValue`, `setGameStateInitialValue` or
-     * `setGameStateValue` functions.
+     * `setGameStateValue` functions
      */
     public function __construct() {
         parent::__construct();
@@ -382,7 +384,7 @@ class Game extends \Table {
             "SELECT face FROM player_dice WHERE player_id = $actionPlayerId AND location = 'hand'"
         );
 
-        $challengeSuccessful = !$this->validateActionClaim($currentAction, $playerDice, $actionPlayerId);
+        $challengeSuccessful = !DiceValidator::validateActionClaim($currentAction, array_column($playerDice, 'face'), $this);
 
         if ($challengeSuccessful) {
             // Note: stealDiceFromPlayer already rerolls both players' dice
@@ -516,7 +518,7 @@ class Game extends \Table {
 
         // No overflow, proceed with normal win checking
         $this->debug("DevilsDice stCheckWin: No overflow found, checking for winners");
-        $winners = $this->checkForWinners();
+        $winners = GameValidator::checkForWinners($this);
 
         if (count($winners) === 1) {
             // Single winner
@@ -615,6 +617,15 @@ class Game extends \Table {
     }
 
     /**
+     * Get dice data for a player
+     */
+    private function getPlayerDice($playerId) {
+        return $this->getCollectionFromDb(
+            "SELECT dice_id, face FROM player_dice WHERE player_id = $playerId AND location = 'hand'"
+        );
+    }
+
+    /**
      * Reroll all existing dice for a player and send notification
      */
     private function rollDiceForPlayer($playerId) {
@@ -641,56 +652,6 @@ class Game extends \Table {
             'dice' => $playerDice,
             'diceCount' => $currentCount
         ]);
-    }
-
-    private function getPlayerDice($playerId) {
-        return $this->getCollectionFromDb(
-            "SELECT dice_id, face FROM player_dice WHERE player_id = $playerId AND location = 'hand'"
-        );
-    }
-
-    private function validateActionClaim($action, $playerDice, $playerId) {
-        $diceFaces = array_column($playerDice, 'face');
-
-        switch ($action) {
-            case Actions::RAISE_HELL:
-                return in_array(DiceFaces::FLAME, $diceFaces);
-            case Actions::HARVEST_SKULLS:
-                return in_array(DiceFaces::SKULL, $diceFaces);
-            case Actions::EXTORT:
-                return in_array(DiceFaces::TRIDENT, $diceFaces);
-            case Actions::REAP_SOUL:
-                return in_array(DiceFaces::SCYTHE, $diceFaces);
-            case Actions::PENTAGRAM:
-                return in_array(DiceFaces::PENTAGRAM, $diceFaces);
-            case Actions::IMPS_SET:
-                return $this->validateImpsSet($diceFaces);
-            case Actions::BLOCK:
-                $currentAction = $this->getGameStateValue('current_action');
-                if ($currentAction == Actions::EXTORT) {
-                    return in_array(DiceFaces::TRIDENT, $diceFaces);
-                } else if ($currentAction == Actions::REAP_SOUL) {
-                    return in_array(DiceFaces::PENTAGRAM, $diceFaces);
-                }
-                return false;
-        }
-        return false;
-    }
-
-    private function validateImpsSet($diceFaces) {
-        if (empty($diceFaces)) return false;
-
-        // Count non-imp faces
-        $nonImpFaces = array_filter($diceFaces, function ($face) {
-            return $face !== DiceFaces::IMP;
-        });
-
-        // If all are imps, it's valid
-        if (empty($nonImpFaces)) return true;
-
-        // If there are non-imp faces, they must all be the same
-        $uniqueNonImpFaces = array_unique($nonImpFaces);
-        return count($uniqueNonImpFaces) === 1;
     }
 
     /**
@@ -733,6 +694,9 @@ class Game extends \Table {
         $this->rollDiceForPlayer($playerId);
     }
 
+    /**
+     * Steal dice from one player to another
+     */
     private function stealDiceFromPlayer($stealerId, $victimId) {
         // Check if stealer would overflow before stealing
         $stealerCurrent = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $stealerId AND location = 'hand'"));
@@ -991,36 +955,6 @@ class Game extends \Table {
         );
     }
 
-    private function checkForWinners() {
-        $players = $this->loadPlayersBasicInfos();
-        $winners = [];
-
-        foreach ($players as $playerId => $player) {
-            if ($this->hasAllSymbols($playerId)) {
-                $winners[] = $playerId;
-            }
-        }
-
-        return $winners;
-    }
-
-    private function hasAllSymbols($playerId) {
-        // Get player's dice
-        $playerDice = $this->getCollectionFromDb(
-            "SELECT DISTINCT face FROM player_dice WHERE player_id = $playerId AND location = 'hand'"
-        );
-
-        // Get Satan's pool dice
-        $poolDice = $this->getCollectionFromDb("SELECT DISTINCT face FROM satans_pool");
-
-        // Combine all available faces
-        $allFaces = array_merge(array_column($playerDice, 'face'), array_column($poolDice, 'face'));
-        $uniqueFaces = array_unique($allFaces);
-
-        // Check if all 6 symbols are present
-        $requiredFaces = DiceFaces::getAllFaces();
-        return count(array_intersect($uniqueFaces, $requiredFaces)) === 6;
-    }
 
     private function countImpsForPlayer($playerId) {
         $playerDice = $this->getCollectionFromDb(
@@ -1145,15 +1079,6 @@ class Game extends \Table {
 
         $this->debug("DevilsDice getAllDatas: Final result = " . json_encode($result));
         return $result;
-    }
-
-    /**
-     * Returns the game name.
-     *
-     * IMPORTANT: Please do not modify.
-     */
-    protected function getGameName() {
-        return "devilsdice";
     }
 
     /**

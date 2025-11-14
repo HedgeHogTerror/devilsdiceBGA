@@ -3,12 +3,22 @@
 declare(strict_types=1);
 
 spl_autoload_register(function ($class) {
-    $prefix = 'Bga\\Games\\DevilsDice\\';
+    $prefixes = [
+        'Bga\\Games\\DevilsDice\\',
+        'Bga\\Games\\devilsdice\\' // Handle case sensitivity
+    ];
 
-    if (!str_starts_with($class, $prefix))
+    $relativeClass = null;
+    foreach ($prefixes as $prefix) {
+        if (str_starts_with($class, $prefix)) {
+            $relativeClass = substr($class, strlen($prefix));
+            break;
+        }
+    }
+
+    if ($relativeClass === null)
         return;
 
-    $relativeClass = substr($class, strlen($prefix));
     $dir = __DIR__ . DIRECTORY_SEPARATOR;
     $file = ltrim(str_replace("\\", DIRECTORY_SEPARATOR, $relativeClass), DIRECTORY_SEPARATOR) . '.inc.php';
 
