@@ -27,8 +27,8 @@ namespace Bga\Games\DevilsDice;
 require_once(APP_GAMEMODULE_PATH . "module/table/table.game.php");
 require_once("autoload.php");
 require_once("Constants.inc.php");
-require_once("DiceValidator.php");
-require_once("GameValidator.php");
+require_once(__DIR__ . "/DiceValidator.php");
+require_once(__DIR__ . "/GameValidator.php");
 
 class Game extends \Table {
     /**
@@ -518,7 +518,7 @@ class Game extends \Table {
 
         // No overflow, proceed with normal win checking
         $this->debug("DevilsDice stCheckWin: No overflow found, checking for winners");
-        $winners = GameValidator::checkForWinners($this);
+        $winners = GameValidator::findWinners($this);
 
         if (count($winners) === 1) {
             // Single winner
@@ -553,7 +553,7 @@ class Game extends \Table {
 
         $rolloffResults = [];
         foreach ($winners as $playerId) {
-            $impCount = $this->countImpsForPlayer($playerId);
+            $impCount = GameValidator::countImpsForPlayer($this, $playerId);
             $rolloffResults[$playerId] = $impCount;
         }
 
@@ -956,19 +956,8 @@ class Game extends \Table {
     }
 
 
-    private function countImpsForPlayer($playerId) {
-        $playerDice = $this->getCollectionFromDb(
-            "SELECT face FROM player_dice WHERE player_id = $playerId AND location = 'hand'"
-        );
 
-        $poolDice = $this->getCollectionFromDb("SELECT face FROM satans_pool");
 
-        $allDice = array_merge(array_column($playerDice, 'face'), array_column($poolDice, 'face'));
-
-        return count(array_filter($allDice, function ($face) {
-            return $face === DiceFaces::IMP;
-        }));
-    }
 
     /**
      * This method is called each time it is the turn of a player who has quit the game (= "zombie" player).
