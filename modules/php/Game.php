@@ -29,6 +29,7 @@ require_once("autoload.php");
 require_once("Constants.inc.php");
 require_once(__DIR__ . "/DiceValidator.php");
 require_once(__DIR__ . "/GameValidator.php");
+require_once(__DIR__ . "/TokenManager.php");
 
 class Game extends \Table {
     /**
@@ -129,8 +130,7 @@ class Game extends \Table {
         $playerId = intval($this->getCurrentPlayerId());
 
         // Check if player has enough skull tokens
-        $tokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
-        if ($tokens < 2) {
+        if (!TokenManager::hasEnoughSkullTokens($this, $playerId, 2)) {
             throw new \BgaUserException("You need 2 skull tokens to use Reap Soul");
         }
 
@@ -174,8 +174,7 @@ class Game extends \Table {
         $playerId = intval($this->getCurrentPlayerId());
 
         // Check if player has enough skull tokens
-        $tokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
-        if ($tokens < 6) {
+        if (!TokenManager::hasEnoughSkullTokens($this, $playerId, 6)) {
             throw new \BgaUserException("You need 6 skull tokens to use Satan's Steal");
         }
 
@@ -756,10 +755,7 @@ class Game extends \Table {
 
     private function executeRaiseHell($playerId) {
         // Add 1 skull token
-        $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + 1 WHERE player_id = $playerId");
-
-        // Get updated token count
-        $newTokenCount = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+        $newTokenCount = TokenManager::addSkullTokens($this, $playerId, 1);
 
         $this->notifyAllPlayers(
             'raiseHell',
@@ -778,10 +774,7 @@ class Game extends \Table {
 
     private function executeHarvestSkulls($playerId) {
         // Add 2 skull tokens
-        $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + 2 WHERE player_id = $playerId");
-
-        // Get updated token count
-        $newTokenCount = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+        $newTokenCount = TokenManager::addSkullTokens($this, $playerId, 2);
 
         $this->notifyAllPlayers(
             'harvestSkulls',

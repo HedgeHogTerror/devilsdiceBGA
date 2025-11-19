@@ -16,7 +16,7 @@ class GameValidator
         $players = $game->loadPlayersBasicInfos();
         $winners = [];
 
-        foreach ($players as $playerId => $player) {
+        foreach (array_keys($players) as $playerId) {
             if (self::hasAllSymbols($game, $playerId)) {
                 $winners[] = $playerId;
             }
