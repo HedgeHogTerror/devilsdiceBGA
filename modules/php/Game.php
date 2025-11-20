@@ -32,6 +32,7 @@ require_once(__DIR__ . "/GameValidator.php");
 require_once(__DIR__ . "/TokenManager.php");
 require_once(__DIR__ . "/DiceManager.php");
 require_once(__DIR__ . "/ActionExecutor.php");
+require_once(__DIR__ . "/PlayerActions.php");
 
 class Game extends \Table {
     /**
@@ -97,102 +98,31 @@ class Game extends \Table {
      */
 
     public function raiseHell() {
-        $this->checkAction('raiseHell');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('current_action', Actions::RAISE_HELL);
-        $this->setGameStateValue('current_action_player', $playerId);
-
-        $this->gamestate->nextState('challengeWindow');
+        PlayerActions::raiseHell($this);
     }
 
     public function harvestSkulls() {
-        $this->checkAction('harvestSkulls');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('current_action', Actions::HARVEST_SKULLS);
-        $this->setGameStateValue('current_action_player', $playerId);
-
-        $this->gamestate->nextState('challengeWindow');
+        PlayerActions::harvestSkulls($this);
     }
 
     public function extort($targetPlayerId) {
-        $this->checkAction('extort');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('current_action', Actions::EXTORT);
-        $this->setGameStateValue('current_action_player', $playerId);
-        $this->setGameStateValue('current_target_player', $targetPlayerId);
-
-        $this->gamestate->nextState('challengeWindow');
+        PlayerActions::extort($this, $targetPlayerId);
     }
 
     public function reapSoul($targetPlayerId) {
-        $this->checkAction('reapSoul');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        // Check if player has enough skull tokens
-        if (!TokenManager::hasEnoughSkullTokens($this, $playerId, 2)) {
-            throw new \BgaUserException("You need 2 skull tokens to use Reap Soul");
-        }
-
-        $this->setGameStateValue('current_action', Actions::REAP_SOUL);
-        $this->setGameStateValue('current_action_player', $playerId);
-        $this->setGameStateValue('current_target_player', $targetPlayerId);
-
-        $this->gamestate->nextState('challengeWindow');
+        PlayerActions::reapSoul($this, $targetPlayerId);
     }
 
     public function pentagram() {
-        $this->checkAction('pentagram');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('current_action', Actions::PENTAGRAM);
-        $this->setGameStateValue('current_action_player', $playerId);
-
-        $this->gamestate->nextState('challengeWindow');
+        PlayerActions::pentagram($this);
     }
 
     public function impsSet() {
-        $this->checkAction('impsSet');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('current_action', Actions::IMPS_SET);
-        $this->setGameStateValue('current_action_player', $playerId);
-
-        // Check if player has 1 or 0 dice - if so, skip challenge window
-        $diceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
-
-        if ($diceCount <= 1) {
-            // Skip challenge window and go directly to resolution
-            $this->gamestate->nextState('resolveAction');
-        } else {
-            $this->gamestate->nextState('challengeWindow');
-        }
+        PlayerActions::impsSet($this);
     }
 
     public function satansSteal($targetPlayerId, $putInPool = false, $poolFace = null) {
-        $this->checkAction('satansSteal');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        // Check if player has enough skull tokens
-        if (!TokenManager::hasEnoughSkullTokens($this, $playerId, 6)) {
-            throw new \BgaUserException("You need 6 skull tokens to use Satan's Steal");
-        }
-
-        $this->setGameStateValue('current_action', Actions::SATANS_STEAL);
-        $this->setGameStateValue('current_action_player', $playerId);
-        $this->setGameStateValue('current_target_player', $targetPlayerId);
-
-        // Store the decision parameters
-        $actionData = json_encode([
-            'putInPool' => $putInPool,
-            'poolFace' => $poolFace
-        ]);
-        $this->setGameStateValue('action_data', (string)$actionData);
-
-        // Satan's Steal cannot be challenged, go directly to resolution
-        $this->gamestate->nextState('resolveAction');
+        PlayerActions::satansSteal($this, $targetPlayerId, $putInPool, $poolFace);
     }
 
     public function stChooseDiceOverflowFace() {
@@ -206,101 +136,20 @@ class Game extends \Table {
     }
 
     public function chooseDiceOverflowFace($face) {
-        $this->checkAction('chooseDiceOverflowFace');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        // Validate the face
-        $validFaces = DiceFaces::getAllFaces();
-        if (!in_array($face, $validFaces)) {
-            throw new \BgaUserException("Invalid dice face");
-        }
-
-        // Get the overflow info
-        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
-
-        // Verify this is the correct player
-        if ($playerId != $overflowPlayer) {
-            throw new \BgaUserException("Only the player who caused the overflow can choose the face");
-        }
-
-        // Add the dice to Satan's pool instead
-        $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$face')");
-
-        // Clear overflow flags
-        $this->setGameStateValue('dice_overflow_player', 0);
-        $this->setGameStateValue('dice_overflow_count', 0);
-
-        // Send notification
-        $this->notifyAllPlayers(
-            'diceToSatansPool',
-            clienttranslate('${player} chooses ${face} to place in Satan\'s pool instead of gaining a die'),
-            [
-                'player' => $this->getPlayerNameById($playerId),
-                'playerId' => $playerId,
-                'face' => $face,
-                'dice' => DiceManager::getPlayerDice($this, $playerId),
-                'diceCount' => intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"))
-            ]
-        );
-
-        $this->gamestate->nextState('checkWin');
+        PlayerActions::chooseDiceOverflowFace($this, $face);
     }
 
 
     public function challenge() {
-        $this->checkAction('challenge');
-        $challengerId = intval($this->getCurrentPlayerId());
-
-        $this->setGameStateValue('challenge_player', $challengerId);
-        $this->gamestate->nextState('resolveChallenge');
+        PlayerActions::challenge($this);
     }
 
     public function block() {
-        $this->checkAction('block');
-        $blockerId = intval($this->getCurrentPlayerId());
-
-        $currentAction = $this->getGameStateValue('current_action');
-
-        // Only certain actions can be blocked
-        if (!in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
-            throw new \BgaUserException("This action cannot be blocked");
-        }
-
-        // Set up block challenge window
-        $this->setGameStateValue('current_action_player', $blockerId);
-        $this->setGameStateValue('current_action', Actions::BLOCK);
-
-        $this->gamestate->nextState('challengeBlock');
+        PlayerActions::block($this);
     }
 
     public function pass() {
-        $this->checkAction('pass');
-        $playerId = intval($this->getCurrentPlayerId());
-
-        // DEBUG: Log current state and player info
-        $currentState = $this->gamestate->state();
-        $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
-        $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
-        $this->debug("DevilsDice pass(): Player $playerId passing in state $stateId ($stateName)");
-
-        // Player passes on challenge or block opportunity
-        // $stateName already set above with safety check
-
-        if ($stateName === 'challengeWindow') {
-            // In multipleactiveplayer state, just make this player inactive
-            // The BGA framework will automatically transition when all players have acted
-            $this->debug("DevilsDice pass(): Setting player $playerId non-multiactive, will transition to resolveAction");
-            $this->gamestate->setPlayerNonMultiactive($playerId, 'resolveAction');
-            $this->debug("DevilsDice pass(): Player $playerId set non-multiactive");
-        } else if ($stateName === 'blockWindow') {
-            // Single player block window - can transition immediately
-            $this->debug("DevilsDice pass(): Player $playerId not blocking, transitioning to resolveAction");
-            $this->gamestate->nextState('resolveAction');
-            $this->debug("DevilsDice pass(): Transition to resolveAction completed");
-        } else {
-            $this->debug("DevilsDice pass(): Cannot pass in current state: $stateName");
-            throw new \BgaUserException("Cannot pass in current state: $stateName");
-        }
+        PlayerActions::pass($this);
     }
 
     /**
