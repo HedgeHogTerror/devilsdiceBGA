@@ -1,18 +1,18 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Bga\Games\DevilsDice;
 
 /**
- * DiceManager - Simple utility for dice operations
+ * DiceManager - Simple utility for dice operations ok
+ * Force refresh 2024-11-27 v2
  */
-class DiceManager
-{
+class DiceManager {
     /**
      * Get dice data for a player
      */
-    public static function getPlayerDice($game, $playerId): array
-    {
+    public static function getPlayerDice($game, $playerId): array {
         return $game->getCollectionFromDb(
             "SELECT dice_id, face FROM player_dice WHERE player_id = $playerId AND location = 'hand'"
         );
@@ -21,8 +21,7 @@ class DiceManager
     /**
      * Reroll all existing dice for a player and send notification
      */
-    public static function rollDiceForPlayer($game, $playerId)
-    {
+    public static function rollDiceForPlayer($game, $playerId) {
         $currentCount = intval($game->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
 
         if ($currentCount > 0) {

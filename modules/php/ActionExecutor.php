@@ -1,18 +1,17 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Bga\Games\DevilsDice;
 
 /**
- * ActionExecutor - Handles execution of all game actions
+ * ActionExecutor - Handles execution of all game actions ok v2
  */
-class ActionExecutor
-{
+class ActionExecutor {
     /**
      * Execute Raise Hell action
      */
-    public static function executeRaiseHell($game, $playerId)
-    {
+    public static function executeRaiseHell($game, $playerId) {
         // Add 1 skull token
         $newTokenCount = TokenManager::addSkullTokens($game, $playerId, 1);
 
@@ -34,8 +33,7 @@ class ActionExecutor
     /**
      * Execute Harvest Skulls action
      */
-    public static function executeHarvestSkulls($game, $playerId)
-    {
+    public static function executeHarvestSkulls($game, $playerId) {
         // Add 2 skull tokens
         $newTokenCount = TokenManager::addSkullTokens($game, $playerId, 2);
 
@@ -53,8 +51,7 @@ class ActionExecutor
     /**
      * Execute Extort action
      */
-    public static function executeExtort($game, $playerId, $targetId)
-    {
+    public static function executeExtort($game, $playerId, $targetId) {
         // Transfer 3 skull tokens from target to player
         $targetTokens = $game->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $targetId");
         $tokensToSteal = min(3, $targetTokens);
@@ -84,8 +81,7 @@ class ActionExecutor
     /**
      * Execute Reap Soul action
      */
-    public static function executeReapSoul($game, $playerId, $targetId)
-    {
+    public static function executeReapSoul($game, $playerId, $targetId) {
         // Pay 2 skull tokens
         $game->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
 
@@ -107,8 +103,7 @@ class ActionExecutor
     /**
      * Execute Pentagram action
      */
-    public static function executePentagram($game, $playerId)
-    {
+    public static function executePentagram($game, $playerId) {
         // Get existing dice in Satan's pool before rerolling
         $poolDice = $game->getCollectionFromDb("SELECT dice_id FROM satans_pool");
         $faces = \Bga\Games\DevilsDice\DiceFaces::getAllFaces();
@@ -116,7 +111,13 @@ class ActionExecutor
         $pentagramDiceIds = [];
 
         // Reroll each die in Satan's pool
-        foreach ($poolDice as $diceId => $dice) {
+        foreach ($poolDice as $diceRow) {
+            // getCollectionFromDb returns rows as associative arrays
+            $diceId = isset($diceRow['dice_id']) ? intval($diceRow['dice_id']) : null;
+            if ($diceId === null) {
+                continue;
+            }
+
             $newFace = $faces[array_rand($faces)];
             $game->DbQuery("UPDATE satans_pool SET face = '$newFace' WHERE dice_id = $diceId");
 
@@ -171,8 +172,9 @@ class ActionExecutor
     /**
      * Execute Imp's Set action
      */
-    public static function executeImpsSet($game, $playerId)
-    {
+    public static function executeImpsSet($game, $playerId) {
+        $game->debug("🎲🎲🎲 ActionExecutor::executeImpsSet: ENTERED for player $playerId 🎲🎲🎲");
+
         $game->notifyAllPlayers(
             'impsSet',
             clienttranslate('${player} uses Imp\'s Set to gain a die and rerolls all dice'),
@@ -181,16 +183,17 @@ class ActionExecutor
                 'playerId' => $playerId
             ]
         );
+        $game->debug("🎲 executeImpsSet: Notification sent, about to call addOrRemoveDice");
 
         // Add 1 die and reroll all dice (check for overflow)
         $game->addOrRemoveDice($playerId, 1);
+        $game->debug("🎲 executeImpsSet: addOrRemoveDice completed - FUNCTION COMPLETE");
     }
 
     /**
      * Execute Satan's Steal action
      */
-    public static function executeSatansSteal($game, $playerId)
-    {
+    public static function executeSatansSteal($game, $playerId) {
         $targetId = $game->getGameStateValue('current_target_player');
 
         // Check if we have action data (from decision state)

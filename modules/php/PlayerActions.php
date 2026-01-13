@@ -1,18 +1,18 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Bga\Games\DevilsDice;
 
 /**
  * PlayerActions - Handles all player action input methods
+ * Force refresh 2024-11-27 v2
  */
-class PlayerActions
-{
+class PlayerActions {
     /**
      * Raise Hell action - player declares they want to raise hell
      */
-    public static function raiseHell($game)
-    {
+    public static function raiseHell($game) {
         $game->checkAction('raiseHell');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -25,8 +25,7 @@ class PlayerActions
     /**
      * Harvest Skulls action - player declares they want to harvest skulls
      */
-    public static function harvestSkulls($game)
-    {
+    public static function harvestSkulls($game) {
         $game->checkAction('harvestSkulls');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -39,8 +38,7 @@ class PlayerActions
     /**
      * Extort action - player declares they want to extort from target
      */
-    public static function extort($game, $targetPlayerId)
-    {
+    public static function extort($game, $targetPlayerId) {
         $game->checkAction('extort');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -54,8 +52,7 @@ class PlayerActions
     /**
      * Reap Soul action - player declares they want to reap soul from target
      */
-    public static function reapSoul($game, $targetPlayerId)
-    {
+    public static function reapSoul($game, $targetPlayerId) {
         $game->checkAction('reapSoul');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -74,8 +71,7 @@ class PlayerActions
     /**
      * Pentagram action - player declares they want to use pentagram
      */
-    public static function pentagram($game)
-    {
+    public static function pentagram($game) {
         $game->checkAction('pentagram');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -88,8 +84,7 @@ class PlayerActions
     /**
      * Imp's Set action - player declares they want to use imp's set
      */
-    public static function impsSet($game)
-    {
+    public static function impsSet($game) {
         $game->checkAction('impsSet');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -110,8 +105,7 @@ class PlayerActions
     /**
      * Satan's Steal action - player declares they want to use Satan's steal
      */
-    public static function satansSteal($game, $targetPlayerId, $putInPool = false, $poolFace = null)
-    {
+    public static function satansSteal($game, $targetPlayerId, $putInPool = false, $poolFace = null) {
         $game->checkAction('satansSteal');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -138,8 +132,7 @@ class PlayerActions
     /**
      * Challenge action - player challenges current action
      */
-    public static function challenge($game)
-    {
+    public static function challenge($game) {
         $game->checkAction('challenge');
         $challengerId = intval($game->getCurrentPlayerId());
 
@@ -150,8 +143,7 @@ class PlayerActions
     /**
      * Block action - player blocks current action
      */
-    public static function block($game)
-    {
+    public static function block($game) {
         $game->checkAction('block');
         $blockerId = intval($game->getCurrentPlayerId());
 
@@ -172,8 +164,7 @@ class PlayerActions
     /**
      * Pass action - player passes on challenge or block opportunity
      */
-    public static function pass($game)
-    {
+    public static function pass($game) {
         $game->checkAction('pass');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -189,9 +180,17 @@ class PlayerActions
         if ($stateName === 'challengeWindow') {
             // In multipleactiveplayer state, just make this player inactive
             // The BGA framework will automatically transition when all players have acted
-            $game->debug("DevilsDice pass(): Setting player $playerId non-multiactive, will transition to resolveAction");
-            $game->gamestate->setPlayerNonMultiactive($playerId, 'resolveAction');
-            $game->debug("DevilsDice pass(): Player $playerId set non-multiactive");
+
+            // Determine correct transition based on current action type
+            $currentAction = $game->getGameStateValue('current_action');
+            $nextState = 'resolveAction';
+            if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
+                $nextState = 'blockWindow';
+            }
+
+            $game->debug("🟦🟦🟦 PASS v4: Player $playerId passing, will transition to $nextState (action: $currentAction) 🟦🟦🟦");
+            $game->gamestate->setPlayerNonMultiactive($playerId, $nextState);
+            $game->debug("🟦 PASS: Player $playerId set non-multiactive with transition to $nextState");
         } else if ($stateName === 'blockWindow') {
             // Single player block window - can transition immediately
             $game->debug("DevilsDice pass(): Player $playerId not blocking, transitioning to resolveAction");
@@ -206,8 +205,7 @@ class PlayerActions
     /**
      * Choose dice overflow face - player chooses which face to put in Satan's pool
      */
-    public static function chooseDiceOverflowFace($game, $face)
-    {
+    public static function chooseDiceOverflowFace($game, $face) {
         $game->checkAction('chooseDiceOverflowFace');
         $playerId = intval($game->getCurrentPlayerId());
 
@@ -245,6 +243,16 @@ class PlayerActions
             ]
         );
 
-        $game->gamestate->nextState('checkWin');
+        // Transition based on state type
+        $state = $game->gamestate->state();
+        $stateType = $state['type'];
+
+        if ($stateType === 'multipleactiveplayer') {
+            // Use setPlayerNonMultiactive for multipleactiveplayer state
+            $game->gamestate->setPlayerNonMultiactive($playerId, 'checkWin');
+        } else {
+            // Use nextState for activeplayer state
+            $game->gamestate->nextState('checkWin');
+        }
     }
 }

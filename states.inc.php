@@ -50,7 +50,7 @@ $machinestates = array(
 	),
 	3 => array(
 		'name' => 'challengeWindow',
-		'description' => clienttranslate('Players may challenge ${actplayer}'s claim'),
+		'description' => clienttranslate('Players may challenge ${actplayer}s claim'),
 		'type' => 'multipleactiveplayer',
 		'action' => 'stChallengeWindow',
 		'descriptionmyturn' => clienttranslate('Other players may challenge your claim'),
@@ -116,10 +116,11 @@ $machinestates = array(
 	),
 	9 => array(
 		'name' => 'chooseDiceOverflowFace',
-		'description' => clienttranslate('${actplayer} must choose a face to place in Satan's pool'),
-		'descriptionmyturn' => clienttranslate('${you} must choose a face to place in Satan's pool instead of gaining a die'),
-		'type' => 'activeplayer',
+		'description' => clienttranslate('${actplayer} must choose a face to place in Satans pool'),
+		'descriptionmyturn' => clienttranslate('${you} must choose a face to place in Satans pool instead of gaining a die'),
+		'type' => 'multipleactiveplayer',
 		'action' => 'stChooseDiceOverflowFace',
+		'args' => 'argChooseDiceOverflowFace',
 		'possibleactions' => ['chooseDiceOverflowFace'],
 		'transitions' => array(
 			'checkWin' => 7,

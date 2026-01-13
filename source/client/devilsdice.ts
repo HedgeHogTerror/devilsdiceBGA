@@ -186,31 +186,52 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     onUpdateActionButtons(stateName: string, args: any): void {
+        console.log(`=== onUpdateActionButtons DEBUG START ===`);
         console.log(`Updating action buttons for state: ${stateName}`, args);
+        console.log(`Current player ID: ${this['player_id']}`);
+        console.log(`isCurrentPlayerActive(): ${this['isCurrentPlayerActive']()}`);
 
-        if (!this['isCurrentPlayerActive']()) return;
+        // CRITICAL: Check what BGA thinks about current player active status
+        const gamedatas = this['gamedatas'];
+        const gamestate = gamedatas?.gamestate;
+        console.log(`Game state info:`, gamestate);
+        console.log(`Multiactive players:`, gamestate?.multiactive);
+        console.log(`Active player:`, gamestate?.active_player);
+
+        if (!this['isCurrentPlayerActive']()) {
+            console.log('EARLY RETURN: Player is not active according to BGA framework');
+            return;
+        }
 
         switch (stateName) {
             case GAME_STATES.PLAYER_TURN:
+                console.log('Adding player turn buttons');
                 this.addPlayerTurnButtons();
                 break;
             case GAME_STATES.CHALLENGE_WINDOW:
                 // Only show challenge buttons if this player is NOT the action player
+                console.log('=== CHALLENGE WINDOW BUTTON LOGIC ===');
                 console.log('Args for challenge window:', args);
-                if (!this.isActionPlayer(args)) {
-                    console.log('Player is NOT action player - showing challenge buttons');
+                const isActionPlayer = this.isActionPlayer(args);
+                console.log(`isActionPlayer result: ${isActionPlayer}`);
+
+                if (!isActionPlayer) {
+                    console.log('✅ Player is NOT action player - showing challenge buttons');
                     this.addChallengeButtons();
                 } else {
-                    console.log('Player IS action player - NOT showing challenge buttons');
+                    console.log('❌ Player IS action player - NOT showing challenge buttons');
                 }
                 break;
             case GAME_STATES.BLOCK_WINDOW:
+                console.log('Adding block buttons');
                 this.addBlockButtons();
                 break;
             case GAME_STATES.CHOOSE_DICE_OVERFLOW_FACE:
+                console.log('Adding dice overflow buttons');
                 this.addDiceOverflowButtons();
                 break;
         }
+        console.log(`=== onUpdateActionButtons DEBUG END ===`);
     }
 
     ///////////////////////////////////////////////////
@@ -272,8 +293,14 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     private addChallengeButtons(): void {
+        console.log('🚨 addChallengeButtons: ADDING CHALLENGE BUTTONS TO UI');
+        console.log('🚨 Current player:', this['player_id']);
+        console.log('🚨 Stack trace:', new Error().stack);
+
         this['addActionButton']('challenge_btn', _('Challenge'), 'onChallenge');
         this['addActionButton']('pass_btn', _('Pass'), 'onPass');
+
+        console.log('🚨 Challenge buttons added successfully');
     }
 
     private addBlockButtons(): void {
@@ -1118,6 +1145,7 @@ export default class DevilsDice extends (GameGui as any) {
 
     private isActionPlayer(stateArgs?: any): boolean {
         // Check if the current player is the one who declared the action
+        // IMPORTANT: Always prioritize stateArgs over cached gamedatas to get current state
         const gamedatas = this['gamedatas'] as GameData;
 
         console.log('isActionPlayer: Full gamedatas object:', gamedatas);
@@ -1125,17 +1153,34 @@ export default class DevilsDice extends (GameGui as any) {
         console.log('isActionPlayer: type of currentActionPlayer:', typeof gamedatas?.currentActionPlayer);
         console.log('isActionPlayer: stateArgs:', stateArgs);
 
-        // Try to get action player from state args first, then fallback to gamedatas
+        // Get action player from current state args (most up-to-date)
         let actionPlayerId: string | number | undefined;
 
-        if (stateArgs && (stateArgs.currentActionPlayer !== undefined || stateArgs.actionPlayerId !== undefined)) {
-            actionPlayerId = stateArgs.currentActionPlayer || stateArgs.actionPlayerId;
+        // Check multiple possible property names in stateArgs
+        if (stateArgs && typeof stateArgs === 'object') {
+            actionPlayerId = stateArgs.currentActionPlayer ||
+                           stateArgs.actionPlayerId ||
+                           stateArgs.current_action_player ||
+                           stateArgs.actionPlayer;
             console.log('isActionPlayer: Found actionPlayerId in stateArgs:', actionPlayerId);
-        } else if (gamedatas && gamedatas.currentActionPlayer !== undefined && gamedatas.currentActionPlayer !== null) {
-            actionPlayerId = gamedatas.currentActionPlayer;
-            console.log('isActionPlayer: Found actionPlayerId in gamedatas:', actionPlayerId);
-        } else {
-            console.log('isActionPlayer: No currentActionPlayer found in either stateArgs or gamedatas');
+        }
+
+        // If stateArgs doesn't have it, fallback to gamedatas (but this might be stale)
+        if (actionPlayerId === undefined || actionPlayerId === null) {
+            if (gamedatas && gamedatas.currentActionPlayer !== undefined && gamedatas.currentActionPlayer !== null) {
+                actionPlayerId = gamedatas.currentActionPlayer;
+                console.log('isActionPlayer: Using fallback actionPlayerId from gamedatas:', actionPlayerId);
+            } else {
+                console.log('isActionPlayer: No currentActionPlayer found - treating as no action player');
+                // If we can't find an action player, assume current player is NOT the action player
+                // This prevents the bug where everyone gets challenge buttons
+                return false;
+            }
+        }
+
+        // If actionPlayerId is 0 or empty, current player is not the action player
+        if (!actionPlayerId || actionPlayerId === 0 || actionPlayerId === '0') {
+            console.log('isActionPlayer: actionPlayerId is 0/empty - current player is NOT action player');
             return false;
         }
 

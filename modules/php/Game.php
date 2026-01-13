@@ -4,6 +4,7 @@
  *------
  * BGA framework: Gregory Isabelli & Emmanuel Colin & BoardGameArena
  * DevilsDice implementation : © hedgehogterror, brookelfnichols@gmail.com
+ * 🔥🔥🔥 FORCE REFRESH 2024-11-27 v3 🔥🔥🔥
  *
  * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
  * See http://en.boardgamearena.com/#!doc/Studio for more information.
@@ -18,6 +19,7 @@
  * This is the main file for your game logic.
  *
  * In this PHP file, you are going to defines the rules of the game.
+ * Force refresh 2024-11-27
  */
 
 declare(strict_types=1);
@@ -70,13 +72,6 @@ class Game extends \Table {
     private const STARTING_SKULL_TOKENS = 6;
     private const STARTING_DICE = 2;
 
-    public function argChallengeWindow() {
-        return [
-            'currentActionPlayer' => $this->getGameStateValue('current_action_player'),
-            'currentAction' => $this->getGameStateValue('current_action'),
-            'currentTargetPlayer' => $this->getGameStateValue('current_target_player')
-        ];
-    }
 
 
     /**
@@ -125,14 +120,46 @@ class Game extends \Table {
         PlayerActions::satansSteal($this, $targetPlayerId, $putInPool, $poolFace);
     }
 
+    public function argChooseDiceOverflowFace() {
+        // Provide arguments for the chooseDiceOverflowFace state
+        $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+
+        return [
+            'actplayer' => $this->getPlayerNameById($overflowPlayer),
+            '_private' => [] // No private args needed
+        ];
+    }
+
     public function stChooseDiceOverflowFace() {
         // State method - called when entering chooseDiceOverflowFace state
+        $this->debug("🔥🔥🔥 NEW CODE VERSION 2025-01-13-04:30 LOADED 🔥🔥🔥");
         $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
         $this->debug("DevilsDice stChooseDiceOverflowFace: overflow player is $overflowPlayer");
 
-        // The active player is automatically set by the framework to the overflow player
-        // since this is an activeplayer state and we're transitioning from a game state
-        $this->gamestate->changeActivePlayer($overflowPlayer);
+        // Get current state info to determine how to set active player
+        $state = $this->gamestate->state();
+        $stateType = $state['type'];
+
+        $this->debug("DevilsDice stChooseDiceOverflowFace: State type is $stateType");
+
+        if ($stateType === 'multipleactiveplayer') {
+            // Use multipleactiveplayer pattern
+            $this->gamestate->setPlayersMultiactive(array(strval($overflowPlayer)), 'checkWin', false);
+            $this->debug("DevilsDice stChooseDiceOverflowFace: Set player $overflowPlayer as multiactive");
+        } else if ($stateType === 'activeplayer') {
+            // For activeplayer state, we need to ensure the correct player is active
+            // But we CANNOT call changeActivePlayer here because we're already in the state
+            // The active player must have been set before entering this state
+            // If it wasn't set correctly, we have a problem - log it
+            $currentActive = $this->getActivePlayerId();
+            $this->debug("DevilsDice stChooseDiceOverflowFace: State is activeplayer, current active: $currentActive, should be: $overflowPlayer");
+
+            if ($currentActive != $overflowPlayer) {
+                $this->warn("DevilsDice stChooseDiceOverflowFace: WARNING - Active player mismatch! Current: $currentActive, Expected: $overflowPlayer");
+                // We can't fix this here without causing an error
+                // The game will have to continue with whoever is active
+            }
+        }
     }
 
     public function chooseDiceOverflowFace($face) {
@@ -181,37 +208,42 @@ class Game extends \Table {
         $this->gamestate->nextState('playerTurn');
     }
 
+
     public function stChallengeWindow() {
-        $actionPlayerId = $this->getGameStateValue('current_action_player');
+        $this->debug("🚀🚀🚀 FRESH CODE v5: stChallengeWindow - ANTI-LOOP PROTECTION 🚀🚀🚀");
+
+        // ANTI-LOOP PROTECTION: Check if we're coming from a crashed resolveAction
+        // If the game state shows we're in challengeWindow but action was already being resolved,
+        // this indicates stResolveAction crashed and we need to clear the action state
+        $gameStateId = $this->gamestate->state_id();
+        $this->debug("🚀 stChallengeWindow: Current game state ID: $gameStateId");
+
+        // Get action player and determine who can challenge
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
         $currentAction = $this->getGameStateValue('current_action');
 
-        $this->debug("DevilsDice stChallengeWindow: actionPlayerId = $actionPlayerId (type: " . gettype($actionPlayerId) . ")");
+        // Safety check: if actionPlayerId is 0, something went wrong
+        if ($actionPlayerId === 0) {
+            $this->debug("DevilsDice stChallengeWindow: ⚠️ ERROR: actionPlayerId is 0 - skipping challenge window");
+            $this->gamestate->nextState('resolveAction');
+            return;
+        }
 
-        // Activate all players except the action player for potential challenges
+        // Get all players except the action player
         $players = $this->loadPlayersBasicInfos();
         $challengePlayers = [];
-        foreach ($players as $playerId => $player) {
-            $this->debug("DevilsDice stChallengeWindow: Checking player $playerId (type: " . gettype($playerId) . ") vs actionPlayer $actionPlayerId");
 
-            // Use strict comparison with type casting to ensure proper comparison
-            // Also add string comparison as additional safety check
-            if (intval($playerId) !== intval($actionPlayerId) && strval($playerId) !== strval($actionPlayerId)) {
-                $challengePlayers[] = strval($playerId);
-                $this->debug("DevilsDice stChallengeWindow: Added player $playerId to challenge list");
+        foreach ($players as $playerId => $player) {
+            $playerIdInt = intval($playerId);
+            if ($playerIdInt !== $actionPlayerId) {
+                $challengePlayers[] = strval($playerIdInt);
+                $this->debug("DevilsDice stChallengeWindow: Added player $playerIdInt to challenge list");
             } else {
-                $this->debug("DevilsDice stChallengeWindow: Excluded action player $playerId from challenge list");
+                $this->debug("DevilsDice stChallengeWindow: Excluded action player $playerIdInt");
             }
         }
 
         $this->debug("DevilsDice stChallengeWindow: Final challenge players: " . json_encode($challengePlayers));
-
-        // Safety check: ensure action player is not in the challenge list
-        $actionPlayerIdStr = strval($actionPlayerId);
-        $challengePlayers = array_filter($challengePlayers, function ($playerId) use ($actionPlayerIdStr) {
-            return strval($playerId) !== $actionPlayerIdStr;
-        });
-
-        $this->debug("DevilsDice stChallengeWindow: After safety filter: " . json_encode($challengePlayers));
 
         // Determine the next state based on the action type
         $nextState = 'resolveAction';
@@ -219,9 +251,15 @@ class Game extends \Table {
             $nextState = 'blockWindow';
         }
 
-        $this->debug("DevilsDice stChallengeWindow: Setting players multiactive with next state: $nextState");
-        $this->gamestate->setPlayersMultiactive($challengePlayers, $nextState);
-        $this->debug("DevilsDice stChallengeWindow: setPlayersMultiactive completed");
+        // Set only challenge players as multiactive
+        if (count($challengePlayers) > 0) {
+            $this->gamestate->setPlayersMultiactive($challengePlayers, $nextState, true);
+            $this->debug("DevilsDice stChallengeWindow: Set challenge players as multiactive with exclusive=true");
+        } else {
+            // No challengers, proceed to next state
+            $this->gamestate->nextState($nextState);
+            $this->debug("DevilsDice stChallengeWindow: No challengers, proceeding to $nextState");
+        }
     }
 
     public function stResolveChallenge() {
@@ -254,9 +292,7 @@ class Game extends \Table {
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
             // Skip the challenged player's turn and move to next player
-            $this->clearActionState();
-            $this->activeNextPlayer();
-            $this->gamestate->nextState('playerTurn');
+            $this->cancelActionAndContinue();
         } else {
             // Challenge failed - challenger loses dice to Satan's pool
             $this->notifyAllPlayers(
@@ -282,59 +318,74 @@ class Game extends \Table {
     }
 
     public function stResolveAction() {
-        $this->debug("DevilsDice stResolveAction: executing action resolution");
+        try {
+            $actionPlayerId = $this->getGameStateValue('current_action_player');
+            $currentAction = $this->getGameStateValue('current_action');
+            $targetPlayerId = $this->getGameStateValue('current_target_player');
 
-        $actionPlayerId = $this->getGameStateValue('current_action_player');
-        $currentAction = $this->getGameStateValue('current_action');
-        $targetPlayerId = $this->getGameStateValue('current_target_player');
+            $actionName = Actions::getActionName($currentAction);
+            $this->debug("🔧🔧 FRESH v5: stResolveAction - Player: $actionPlayerId, Action: $currentAction ($actionName), Target: $targetPlayerId");
 
-        $actionName = Actions::getActionName($currentAction);
-        $this->debug("DevilsDice: Resolving action - Player: $actionPlayerId, Action: $currentAction ($actionName), Target: $targetPlayerId");
+            $this->debug("🔧 stResolveAction: About to execute action switch statement");
+            switch ($currentAction) {
+                case Actions::RAISE_HELL:
+                    $this->debug("🔧 stResolveAction: executing RAISE_HELL");
+                    ActionExecutor::executeRaiseHell($this, $actionPlayerId);
+                    break;
+                case Actions::HARVEST_SKULLS:
+                    $this->debug("🔧 stResolveAction: executing HARVEST_SKULLS");
+                    ActionExecutor::executeHarvestSkulls($this, $actionPlayerId);
+                    break;
+                case Actions::EXTORT:
+                    $this->debug("🔧 stResolveAction: executing EXTORT");
+                    ActionExecutor::executeExtort($this, $actionPlayerId, $targetPlayerId);
+                    break;
+                case Actions::REAP_SOUL:
+                    $this->debug("🔧 stResolveAction: executing REAP_SOUL");
+                    ActionExecutor::executeReapSoul($this, $actionPlayerId, $targetPlayerId);
+                    break;
+                case Actions::PENTAGRAM:
+                    $this->debug("🔧 stResolveAction: executing PENTAGRAM");
+                    ActionExecutor::executePentagram($this, $actionPlayerId);
+                    break;
+                case Actions::IMPS_SET:
+                    $this->debug("🔧 stResolveAction: executing IMPS_SET");
+                    ActionExecutor::executeImpsSet($this, $actionPlayerId);
+                    break;
+                case Actions::SATANS_STEAL:
+                    $this->debug("🔧 stResolveAction: executing SATANS_STEAL");
+                    ActionExecutor::executeSatansSteal($this, $actionPlayerId);
+                    break;
+                default:
+                    $this->debug("🔧 ERROR: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
+                    break;
+            }
+            $this->debug("🔧 stResolveAction: Action execution completed");
 
-        switch ($currentAction) {
-            case Actions::RAISE_HELL:
-                ActionExecutor::executeRaiseHell($this, $actionPlayerId);
-                break;
-            case Actions::HARVEST_SKULLS:
-                ActionExecutor::executeHarvestSkulls($this, $actionPlayerId);
-                break;
-            case Actions::EXTORT:
-                ActionExecutor::executeExtort($this, $actionPlayerId, $targetPlayerId);
-                break;
-            case Actions::REAP_SOUL:
-                ActionExecutor::executeReapSoul($this, $actionPlayerId, $targetPlayerId);
-                break;
-            case Actions::PENTAGRAM:
-                ActionExecutor::executePentagram($this, $actionPlayerId);
-                break;
-            case Actions::IMPS_SET:
-                ActionExecutor::executeImpsSet($this, $actionPlayerId);
-                break;
-            case Actions::SATANS_STEAL:
-                ActionExecutor::executeSatansSteal($this, $actionPlayerId);
-                break;
-            default:
-                $this->debug("DevilsDice: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
-                break;
+            // DEBUG: Log current state before transition logic
+            $currentState = $this->gamestate->state();
+            $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
+            $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
+            $stateType = isset($currentState['type']) ? $currentState['type'] : 'unknown';
+            $this->debug("🔧 stResolveAction: Current state info - ID: $stateId, Name: $stateName, Type: $stateType");
+
+            // Always transition to checkWin - overflow detection will happen there
+            $this->debug("🔧 stResolveAction: About to transition to checkWin");
+            $this->gamestate->nextState('checkWin');
+        } catch (\Exception $e) {
+            $this->debug("🔧 CRITICAL ERROR in stResolveAction: " . $e->getMessage());
+            $this->debug("🔧 ERROR stack trace: " . $e->getTraceAsString());
+            throw $e;
         }
-
-        // DEBUG: Log current state before transition logic
-        $currentState = $this->gamestate->state();
-        $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
-        $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
-        $stateType = isset($currentState['type']) ? $currentState['type'] : 'unknown';
-        $this->debug("DevilsDice stResolveAction: Current state info - ID: $stateId, Name: $stateName, Type: $stateType");
-
-        // Always transition to checkWin - overflow detection will happen there
-        $this->debug("DevilsDice stResolveAction: transitioning to checkWin");
-        $this->gamestate->nextState('checkWin');
     }
 
     public function stCheckWin() {
+        $this->debug("🏁🏁🏁 DevilsDice stCheckWin: ENTERED CHECK WIN FUNCTION 🏁🏁🏁");
+
         // First, check for pending overflow from action execution
         $actionDataJson = $this->getGameStateValue('action_data');
         $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
-        $this->debug("DevilsDice stCheckWin: Checking for pending overflow - Action data: " . ($actionDataJson ? $actionDataJson : 'empty'));
+        $this->debug("🏁 stCheckWin: Checking for pending overflow - Action data: " . ($actionDataJson ? $actionDataJson : 'empty'));
 
         if (isset($actionData['pending_overflow'])) {
             // There was a pending overflow, set flags and transition to overflow choice
@@ -348,8 +399,8 @@ class Game extends \Table {
             unset($actionData['pending_overflow']);
             $this->setGameStateValue('action_data', json_encode($actionData));
 
-            $this->debug("DevilsDice stCheckWin: Setting active player to " . $pendingOverflow['player']);
-            $this->gamestate->changeActivePlayer($pendingOverflow['player']);
+            // Don't call changeActivePlayer here - let stChooseDiceOverflowFace handle it
+            // This avoids the "Impossible to change active player during activeplayer type state" error
             $this->debug("DevilsDice stCheckWin: Transitioning to chooseDiceOverflowFace");
             $this->gamestate->nextState('chooseDiceOverflowFace');
             return;
@@ -359,8 +410,7 @@ class Game extends \Table {
         $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
         if ((int)$overflowPlayer > 0) {
             $this->debug("DevilsDice stCheckWin: Found legacy overflow player $overflowPlayer");
-            $this->debug("DevilsDice stCheckWin: Setting active player to $overflowPlayer");
-            $this->gamestate->changeActivePlayer((int)$overflowPlayer);
+            // Don't call changeActivePlayer here - let stChooseDiceOverflowFace handle it
             $this->debug("DevilsDice stCheckWin: Transitioning to chooseDiceOverflowFace");
             $this->gamestate->nextState('chooseDiceOverflowFace');
             return;
@@ -391,11 +441,32 @@ class Game extends \Table {
             $this->setGameStateValue('action_data', (string)json_encode($winners));
             $this->gamestate->nextState('rolloff');
         } else {
-            // No winner yet, continue game
-            $this->clearActionState();
-            $this->activeNextPlayer();
-            $this->gamestate->nextState('playerTurn');
+            // No winner yet, continue game - clear action state since action is complete
+            $this->debug("🏁 stCheckWin: No winner found, calling cancelActionAndContinue");
+            $this->cancelActionAndContinue();
         }
+    }
+
+    /**
+     * Move to next player without clearing action state (for normal game flow)
+     */
+    private function continueToNextPlayer() {
+        $this->debug("DevilsDice continueToNextPlayer: Moving to next player WITHOUT clearing action state");
+        $this->activeNextPlayer();
+        $this->gamestate->nextState('playerTurn');
+    }
+
+    /**
+     * Clear action state and move to next player (for cancelled actions)
+     */
+    private function cancelActionAndContinue() {
+        $this->debug("🚀 cancelActionAndContinue: ENTERED - Clearing action state and moving to next player");
+        $this->clearActionState();
+        $this->debug("🚀 cancelActionAndContinue: Action state cleared, calling activeNextPlayer");
+        $this->activeNextPlayer();
+        $this->debug("🚀 cancelActionAndContinue: About to transition to playerTurn");
+        $this->gamestate->nextState('playerTurn');
+        $this->debug("🚀 cancelActionAndContinue: Successfully transitioned to playerTurn - COMPLETE");
     }
 
     public function stRolloff() {
@@ -459,21 +530,30 @@ class Game extends \Table {
 
     private function clearActionState() {
         // Clear action-related game state values when starting a new turn
+        $oldActionPlayer = $this->getGameStateValue('current_action_player');
+        $this->debug("DevilsDice clearActionState: ⚠️ CLEARING ACTION STATE - old action player was: $oldActionPlayer");
+
         $this->setGameStateValue('current_action', 0);
         $this->setGameStateValue('current_action_player', 0);
         $this->setGameStateValue('current_target_player', 0);
         $this->setGameStateValue('challenge_player', 0);
         $this->setGameStateValue('action_data', '');
+
+        $this->debug("DevilsDice clearActionState: Action state cleared, current_action_player now = 0");
     }
 
     /**
      * Add or remove dice from a player and send notification
      */
-    private function addOrRemoveDice($playerId, $count) {
+    public function addOrRemoveDice($playerId, $count) {
+        $this->debug("🎯🎯🎯 addOrRemoveDice: ENTERED for player $playerId, count $count 🎯🎯🎯");
+
         $current = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+        $this->debug("🎯 addOrRemoveDice: Player $playerId currently has $current dice");
 
         // Check for dice overflow when adding dice - store as pending instead of immediate flag
         if ($count > 0 && $current >= 6) {
+            $this->debug("🎯 addOrRemoveDice: Dice overflow detected! Current: $current, adding: $count");
             // Player already has 6 dice, store pending overflow for later processing
             $existingData = $this->getGameStateValue('action_data');
             $actionData = $existingData ? json_decode((string)$existingData, true) : [];
@@ -482,34 +562,44 @@ class Game extends \Table {
                 'count' => $count
             ];
             $this->setGameStateValue('action_data', json_encode($actionData));
-            $this->debug("DevilsDice addOrRemoveDice: Player $playerId at dice limit, storing pending overflow");
+            $this->debug("🎯 addOrRemoveDice: Player $playerId at dice limit, storing pending overflow - EARLY RETURN");
             return; // Don't add dice to player, let stResolveAction handle overflow
         }
 
         $newCount = max(0, $current + $count); // Ensure we don't go below 0
+        $this->debug("🎯 addOrRemoveDice: Calculated newCount = $newCount (current $current + count $count)");
 
         // Delete existing dice
         if ($current > 0) {
+            $this->debug("🎯 addOrRemoveDice: Deleting existing $current dice");
             $this->DbQuery("DELETE FROM player_dice WHERE player_id = $playerId AND location = 'hand'");
+            $this->debug("🎯 addOrRemoveDice: Existing dice deleted");
         }
 
         // Create new dice with random faces
+        $this->debug("🎯 addOrRemoveDice: About to get all dice faces");
         $faces = DiceFaces::getAllFaces();
+        $this->debug("🎯 addOrRemoveDice: Got " . count($faces) . " faces, creating $newCount new dice");
+
         for ($i = 0; $i < $newCount; $i++) {
             $randomFace = $faces[array_rand($faces)];
+            $this->debug("🎯 addOrRemoveDice: Creating die $i with face '$randomFace'");
             $this->DbQuery("INSERT INTO player_dice (player_id, face, location) VALUES ($playerId, '$randomFace', 'hand')");
         }
+        $this->debug("🎯 addOrRemoveDice: All dice created");
 
-        $this->debug("DevilsDice addOrRemoveDice: Player $playerId now has $newCount dice (was $current, changed by $count)");
+        $this->debug("🎯 addOrRemoveDice: Player $playerId now has $newCount dice (was $current, changed by $count)");
 
         // Send notification
+        $this->debug("🎯 addOrRemoveDice: About to call DiceManager::rollDiceForPlayer");
         DiceManager::rollDiceForPlayer($this, $playerId);
+        $this->debug("🎯 addOrRemoveDice: DiceManager::rollDiceForPlayer completed - FUNCTION COMPLETE");
     }
 
     /**
      * Steal dice from one player to another
      */
-    private function stealDiceFromPlayer($stealerId, $victimId) {
+    public function stealDiceFromPlayer($stealerId, $victimId) {
         // Check if stealer would overflow before stealing
         $stealerCurrent = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $stealerId AND location = 'hand'"));
 
@@ -541,7 +631,7 @@ class Game extends \Table {
         DiceManager::rollDiceForPlayer($this, $victimId);
     }
 
-    private function moveDiceToSatansPool($playerId, $face = null) {
+    public function moveDiceToSatansPool($playerId, $face = null) {
         $finalFace = null;
         if ($face === null) {
             // Roll the die and add to Satan's pool

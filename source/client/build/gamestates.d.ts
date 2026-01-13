@@ -35,7 +35,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 	},
 	3: {
 		'name': 'challengeWindow',
-		'description': 'Players may challenge ${actplayer}\'s claim',
+		'description': 'Players may challenge ${actplayer}s claim',
 		'type': 'multipleactiveplayer',
 		'action': 'stChallengeWindow',
 		'descriptionmyturn': 'Other players may challenge your claim',
@@ -101,10 +101,11 @@ interface DefinedGameStates extends ValidateGameStates<{
 	},
 	9: {
 		'name': 'chooseDiceOverflowFace',
-		'description': '${actplayer} must choose a face to place in Satan\'s pool',
-		'descriptionmyturn': '${you} must choose a face to place in Satan\'s pool instead of gaining a die',
-		'type': 'activeplayer',
+		'description': '${actplayer} must choose a face to place in Satans pool',
+		'descriptionmyturn': '${you} must choose a face to place in Satans pool instead of gaining a die',
+		'type': 'multipleactiveplayer',
 		'action': 'stChooseDiceOverflowFace',
+		'args': 'argChooseDiceOverflowFace',
 		'possibleactions': ['chooseDiceOverflowFace'],
 		'transitions': {
 			'checkWin': 7,
@@ -119,7 +120,9 @@ interface DefinedGameStates extends ValidateGameStates<{
 	},
 }> {}
 
-interface GameStateArgs {}
+interface GameStateArgs {
+	'argChooseDiceOverflowFace': object,
+}
 
 interface GameStatePossibleActions {
 	'raiseHell': {},

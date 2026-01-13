@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Bga\Games\DevilsDice;
 
 /**
- * DiceValidator - Simple utility for dice validation
+ * DiceValidator - Simple utility for dice validation ok v2
  */
 class DiceValidator {
     /**
