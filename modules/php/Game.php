@@ -617,7 +617,9 @@ class Game extends \Table {
         // Check if stealer would overflow before stealing
         $stealerCurrent = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $stealerId AND location = 'hand'"));
 
-        if ($stealerCurrent >= 6) {
+        $stealerOverflow = $stealerCurrent >= 6;
+
+        if ($stealerOverflow) {
             // Stealer would overflow, set flags and only remove from victim
             $this->setGameStateValue('dice_overflow_player', $stealerId);
             $this->setGameStateValue('dice_overflow_count', 1);
@@ -640,8 +642,14 @@ class Game extends \Table {
             ]
         );
 
-        // Reroll dice for both players - let frontend handle animation sequencing
-        DiceManager::rollDiceForPlayer($this, $stealerId);
+        // Reroll dice - but don't reroll stealer's dice if they overflowed
+        if (!$stealerOverflow) {
+            // Only reroll stealer's dice if they actually gained a die
+            DiceManager::rollDiceForPlayer($this, $stealerId);
+        } else {
+            $this->debug("DevilsDice stealDiceFromPlayer: Stealer $stealerId overflowed, not rerolling their dice");
+        }
+        // Always reroll victim's dice since they lost a die
         DiceManager::rollDiceForPlayer($this, $victimId);
     }
 
