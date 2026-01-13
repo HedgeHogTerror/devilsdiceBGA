@@ -70,6 +70,7 @@ $machinestates = array(
 			'playerTurn' => 2,
 			'blockWindow' => 6,
 			'resolveAction' => 5,
+			'chooseDiceOverflowFace' => 9,
 		),
 	),
 	5 => array(
@@ -124,6 +125,7 @@ $machinestates = array(
 		'possibleactions' => ['chooseDiceOverflowFace'],
 		'transitions' => array(
 			'checkWin' => 7,
+			'playerTurn' => 2,
 		),
 	),
 	99 => array(

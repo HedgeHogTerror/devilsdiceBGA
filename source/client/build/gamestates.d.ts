@@ -55,6 +55,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'playerTurn': 2,
 			'blockWindow': 6,
 			'resolveAction': 5,
+			'chooseDiceOverflowFace': 9,
 		},
 	},
 	5: {
@@ -109,6 +110,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'possibleactions': ['chooseDiceOverflowFace'],
 		'transitions': {
 			'checkWin': 7,
+			'playerTurn': 2,
 		},
 	},
 	99: {

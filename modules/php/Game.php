@@ -291,8 +291,22 @@ class Game extends \Table {
             // Challenge successful - challenger steals dice, action cancelled
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
-            // Skip the challenged player's turn and move to next player
-            $this->cancelActionAndContinue();
+            // Check for overflow before moving to next player
+            // If the challenger was at 6 dice, stealDiceFromPlayer set overflow flags
+            $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+            if ((int)$overflowPlayer > 0) {
+                $this->debug("DevilsDice stResolveChallenge: Overflow detected after successful challenge for player $overflowPlayer");
+                // Clear action state since the action was cancelled
+                $this->clearActionState();
+                // Set a flag to indicate overflow came from challenge (not normal action)
+                // This tells chooseDiceOverflowFace to go to playerTurn instead of checkWin
+                $this->setGameStateValue('action_data', json_encode(['overflow_from_challenge' => true]));
+                // Transition to chooseDiceOverflowFace to handle the overflow
+                $this->gamestate->nextState('chooseDiceOverflowFace');
+            } else {
+                // No overflow, skip the challenged player's turn and move to next player
+                $this->cancelActionAndContinue();
+            }
         } else {
             // Challenge failed - challenger loses dice to Satan's pool
             $this->notifyAllPlayers(

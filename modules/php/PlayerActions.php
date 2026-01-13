@@ -243,16 +243,33 @@ class PlayerActions {
             ]
         );
 
+        // Check if overflow came from a challenge or normal action
+        $actionDataJson = $game->getGameStateValue('action_data');
+        $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
+        $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
+
+        // Determine next state: playerTurn if from challenge, checkWin if from action
+        $nextState = $overflowFromChallenge ? 'playerTurn' : 'checkWin';
+
+        if ($overflowFromChallenge) {
+            $game->debug("DevilsDice chooseDiceOverflowFace: Overflow from challenge, moving to next player");
+            // Clear the flag and move to next player
+            $game->setGameStateValue('action_data', '');
+            $game->activeNextPlayer();
+        } else {
+            $game->debug("DevilsDice chooseDiceOverflowFace: Overflow from action, checking for win");
+        }
+
         // Transition based on state type
         $state = $game->gamestate->state();
         $stateType = $state['type'];
 
         if ($stateType === 'multipleactiveplayer') {
             // Use setPlayerNonMultiactive for multipleactiveplayer state
-            $game->gamestate->setPlayerNonMultiactive($playerId, 'checkWin');
+            $game->gamestate->setPlayerNonMultiactive($playerId, $nextState);
         } else {
             // Use nextState for activeplayer state
-            $game->gamestate->nextState('checkWin');
+            $game->gamestate->nextState($nextState);
         }
     }
 }
