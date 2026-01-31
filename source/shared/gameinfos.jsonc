@@ -15,6 +15,7 @@
 	"$schema": "../../node_modules/bga-ts-template/schema/gameinfos.schema.json",
 
 	// Game Externals and basic information
+	"display_name": "Devil's Dice",
 	"game_name": "Devil's Dice",
 	"publisher": "The Devil May Care Games",
 	"publisher_website": "http://thedevilmaycaregames.com/",
@@ -42,7 +43,6 @@
 	"is_coop": 0,
 
 	// BGA Game Information
-	"is_beta": 1,
 	"language_dependency": false,
 	"game_interface_width":
 	{
@@ -50,10 +50,5 @@
 		"min": 740,
 		// >= 740. null = no limit
 		"max": null
-	},
-
-	//////// BGA SANDBOX ONLY PARAMETERS (DO NOT MODIFY)
-	"is_sandbox": false,
-	"turnControl": "simple"
-	////////
+	}
 }

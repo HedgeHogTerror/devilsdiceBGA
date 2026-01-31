@@ -45,10 +45,9 @@
 				{ "name": "poolFace", "type": "AT_alphanum" }
 			]
 		},
-		"transitions": { 
-			"challengeWindow": 3, 
-			"resolveAction": 5,
-			"endGame": 99 
+		"transitions": {
+			"challengeWindow": 3,
+			"resolveAction": 5
 		}
 	},
 
@@ -119,10 +118,9 @@
 		"description": "",
 		"type": "game",
 		"action": "stCheckWin",
-		"transitions": { 
+		"transitions": {
 			"rolloff": 8,
 			"playerTurn": 2,
-			"endGame": 99,
 			"chooseDiceOverflowFace": 9
 		}
 	},
@@ -133,8 +131,8 @@
 		"description": "Rolloff between tied players",
 		"type": "game",
 		"action": "stRolloff",
-		"transitions": { 
-			"endGame": 99
+		"transitions": {
+			"playerTurn": 2
 		}
 	},
 
@@ -153,16 +151,5 @@
 			"checkWin": 7,
 			"playerTurn": 2
 		}
-	},
-
-	// Final state.
-	// Please do not modify (and do not overload action/args methods}.
-	"99": {
-		"name": "gameEnd",
-		"description": "End of game",
-		"type": "manager",
-		"action": "stGameEnd",
-		"args": "argGameEnd",
-		"argsType": "object" // Automatically typed by framework.
 	}
 }

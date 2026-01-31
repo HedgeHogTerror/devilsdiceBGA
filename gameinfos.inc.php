@@ -12,6 +12,7 @@
 
 /** @var (string|int|null|bool|string[]|int[])[] $gameinfos */
 $gameinfos = array(
+	'display_name' => 'Devil\'s Dice',
 	'game_name' => 'Devil\'s Dice',
 	'publisher' => 'The Devil May Care Games',
 	'publisher_website' => 'http://thedevilmaycaregames.com/',
@@ -31,12 +32,9 @@ $gameinfos = array(
 	'losers_not_ranked' => false,
 	'solo_mode_ranked' => false,
 	'is_coop' => 0,
-	'is_beta' => 1,
 	'language_dependency' => false,
 	'game_interface_width' => array(
 		'min' => 740,
 		'max' => null,
 	),
-	'is_sandbox' => false,
-	'turnControl' => 'simple',
 );

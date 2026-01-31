@@ -45,7 +45,6 @@ $machinestates = array(
 		'transitions' => array(
 			'challengeWindow' => 3,
 			'resolveAction' => 5,
-			'endGame' => 99,
 		),
 	),
 	3 => array(
@@ -102,7 +101,6 @@ $machinestates = array(
 		'transitions' => array(
 			'rolloff' => 8,
 			'playerTurn' => 2,
-			'endGame' => 99,
 			'chooseDiceOverflowFace' => 9,
 		),
 	),
@@ -112,7 +110,7 @@ $machinestates = array(
 		'type' => 'game',
 		'action' => 'stRolloff',
 		'transitions' => array(
-			'endGame' => 99,
+			'playerTurn' => 2,
 		),
 	),
 	9 => array(
@@ -127,12 +125,5 @@ $machinestates = array(
 			'checkWin' => 7,
 			'playerTurn' => 2,
 		),
-	),
-	99 => array(
-		'name' => 'gameEnd',
-		'description' => clienttranslate('End of game'),
-		'type' => 'manager',
-		'action' => 'stGameEnd',
-		'args' => 'argGameEnd',
 	),
 );

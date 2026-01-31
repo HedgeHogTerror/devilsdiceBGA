@@ -26,7 +26,6 @@ declare(strict_types=1);
 
 namespace Bga\Games\DevilsDice;
 
-require_once(APP_GAMEMODULE_PATH . "module/table/table.game.php");
 require_once("autoload.php");
 require_once("Constants.inc.php");
 require_once(__DIR__ . "/DiceValidator.php");
@@ -36,7 +35,7 @@ require_once(__DIR__ . "/DiceManager.php");
 require_once(__DIR__ . "/ActionExecutor.php");
 require_once(__DIR__ . "/PlayerActions.php");
 
-class Game extends \Table {
+class Game extends \Bga\GameFramework\Table {
     /**
      * Your global variables labels:
      *
@@ -85,7 +84,29 @@ class Game extends \Table {
      * @see ./states.inc.php
      */
     public function getGameProgression(): int {
-        return 0;
+        // Get highest player dice count (win condition is 6 dice with all symbols)
+        $maxDiceCount = intval($this->getUniqueValueFromDB(
+            "SELECT COALESCE(MAX(dice_count), 0) FROM (
+                SELECT COUNT(dice_id) as dice_count
+                FROM player_dice
+                WHERE location = 'hand'
+                GROUP BY player_id
+            ) as counts"
+        ));
+
+        // Get Satan's pool size (indicates game activity)
+        $satansPoolCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM satans_pool"));
+
+        // Progress is weighted: 45% from highest dice count, 45% from Satan's pool
+        // Max dice is 6, max reasonable pool size is ~6 (beyond that it's unusual)
+        // can't reliably predict the games end from these alone, but gives a decent estimate
+        $diceProgress = min(45, ($maxDiceCount / 6) * 50);
+        $poolProgress = min(45, ($satansPoolCount / 6) * 50);
+
+        $totalProgress = intval($diceProgress + $poolProgress);
+
+        // Ensure we return between 0-100, with minimum of 5% to show game has started
+        return max(5, min(100, $totalProgress));
     }
 
     /**
@@ -184,30 +205,11 @@ class Game extends \Table {
      */
 
     public function stGameSetup() {
-        $this->debug("DevilsDice: Starting game setup");
-
-        // Initialize player tokens first
-        $players = $this->loadPlayersBasicInfos();
-        $this->debug("DevilsDice: Found " . count($players) . " players");
-
-        foreach ($players as $playerId => $player) {
-            $this->DbQuery("INSERT INTO player_tokens (player_id, skull_tokens) VALUES ($playerId, " . self::STARTING_SKULL_TOKENS . ")");
-            $this->debug("DevilsDice: Created tokens for player $playerId");
-        }
-
-        // Then give each player 2 starting dice with full notification
-        foreach ($players as $playerId => $player) {
-            $this->debug("DevilsDice: Rolling dice for player $playerId");
-            $this->addOrRemoveDice($playerId, self::STARTING_DICE);
-        }
-
-        // Send a final notification to refresh all game data
-        $this->notifyAllPlayers('gameSetupComplete', '', []);
-        $this->debug("DevilsDice: Game setup completed");
-
+        // This function is deprecated but required by bga-ts-template
+        // All setup logic is in setupNewGame() which returns the initial state ID
+        // This function just transitions to the first real game state
         $this->gamestate->nextState('playerTurn');
     }
-
 
     public function stChallengeWindow() {
         $this->debug("🚀🚀🚀 FRESH CODE v5: stChallengeWindow - ANTI-LOOP PROTECTION 🚀🚀🚀");
@@ -449,7 +451,8 @@ class Game extends \Table {
                 ]
             );
 
-            $this->gamestate->nextState('endGame');
+            // Don't call nextState - framework will end the game automatically
+            // when it sees a player has won (player_score > 0)
         } else if (count($winners) > 1) {
             // Tie - need rolloff
             $this->setGameStateValue('action_data', (string)json_encode($winners));
@@ -535,7 +538,8 @@ class Game extends \Table {
             );
         }
 
-        $this->gamestate->nextState('endGame');
+        // Don't call nextState - framework will end the game automatically
+        // when it sees a player has won (player_score > 0)
     }
 
     /**
@@ -699,10 +703,89 @@ class Game extends \Table {
 
         if ($state["type"] === "activeplayer") {
             switch ($stateName) {
-                default: {
-                        $this->gamestate->nextState("zombiePass");
-                        break;
+                case "playerTurn":
+                    // Zombie player passes their turn - just move to next player
+                    $this->clearActionState();
+                    $this->gamestate->nextState("challengeWindow");
+                    break;
+
+                case "blockWindow":
+                    // Zombie doesn't block - pass
+                    $this->gamestate->nextState("resolveAction");
+                    break;
+                // this case shoulnd't happen unless the player abandoned mid choice
+                case "chooseDiceOverflowFace":
+                    // Zombie chooses a random face for Satan's pool
+                    $faces = DiceFaces::getAllFaces();
+                    $randomFace = $faces[array_rand($faces)];
+
+                    $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
+                    if ($activePlayer == $overflowPlayer) {
+                        $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$randomFace')");
+                        $this->setGameStateValue('dice_overflow_player', 0);
+                        $this->setGameStateValue('dice_overflow_count', 0);
+
+                        // Check if from challenge or normal action
+                        $actionDataJson = $this->getGameStateValue('action_data');
+                        $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
+                        $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
+
+                        if ($overflowFromChallenge) {
+                            $this->setGameStateValue('action_data', '');
+                            $this->activeNextPlayer();
+                            $this->gamestate->nextState("playerTurn");
+                        } else {
+                            $this->gamestate->nextState("checkWin");
+                        }
                     }
+                    break;
+
+                default:
+                    // For any other activeplayer state, throw an error
+                    throw new \feException("Zombie mode not supported at this game state: \"{$stateName}\".");
+            }
+
+            return;
+        }
+
+        if ($state["type"] === "multipleactiveplayer") {
+            // For multipleactiveplayer states, zombie just passes
+            switch ($stateName) {
+                case "challengeWindow":
+                    // Zombie doesn't challenge - pass
+                    $currentAction = $this->getGameStateValue('current_action');
+                    $nextState = 'resolveAction';
+                    if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
+                        $nextState = 'blockWindow';
+                    }
+                    $this->gamestate->setPlayerNonMultiactive($activePlayer, $nextState);
+                    break;
+
+                case "chooseDiceOverflowFace":
+                    // Zombie chooses random face (multipleactiveplayer version)
+                    $faces = DiceFaces::getAllFaces();
+                    $randomFace = $faces[array_rand($faces)];
+
+                    $this->DbQuery("INSERT INTO satans_pool (face) VALUES ('$randomFace')");
+                    $this->setGameStateValue('dice_overflow_player', 0);
+                    $this->setGameStateValue('dice_overflow_count', 0);
+
+                    // Check if from challenge or normal action
+                    $actionDataJson = $this->getGameStateValue('action_data');
+                    $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
+                    $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
+
+                    $nextState = $overflowFromChallenge ? 'playerTurn' : 'checkWin';
+                    if ($overflowFromChallenge) {
+                        $this->setGameStateValue('action_data', '');
+                        $this->activeNextPlayer();
+                    }
+
+                    $this->gamestate->setPlayerNonMultiactive($activePlayer, $nextState);
+                    break;
+
+                default:
+                    throw new \feException("Zombie mode not supported at this game state: \"{$stateName}\".");
             }
 
             return;
@@ -854,5 +937,9 @@ class Game extends \Table {
         $this->activeNextPlayer();
 
         $this->debug("DevilsDice: setupNewGame completed");
+
+        // Return the initial game state ID (playerTurn = 2)
+        // This replaces the old state 1 (gameSetup) pattern
+        return 2;
     }
 }

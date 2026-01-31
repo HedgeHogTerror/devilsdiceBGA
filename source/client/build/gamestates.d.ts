@@ -30,7 +30,6 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'transitions': {
 			'challengeWindow': 3,
 			'resolveAction': 5,
-			'endGame': 99,
 		},
 	},
 	3: {
@@ -87,7 +86,6 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'transitions': {
 			'rolloff': 8,
 			'playerTurn': 2,
-			'endGame': 99,
 			'chooseDiceOverflowFace': 9,
 		},
 	},
@@ -97,7 +95,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'type': 'game',
 		'action': 'stRolloff',
 		'transitions': {
-			'endGame': 99,
+			'playerTurn': 2,
 		},
 	},
 	9: {
@@ -112,13 +110,6 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'checkWin': 7,
 			'playerTurn': 2,
 		},
-	},
-	99: {
-		'name': 'gameEnd',
-		'description': 'End of game',
-		'type': 'manager',
-		'action': 'stGameEnd',
-		'args': 'argGameEnd',
 	},
 }> {}
 
