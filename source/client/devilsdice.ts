@@ -359,45 +359,20 @@ export default class DevilsDice extends (GameGui as any) {
         }
 
         if (this.validateAction('reapSoul')) {
-            // Check how many other players are available
-            const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
-
-            if (availablePlayers.length === 0) {
-                console.error('No available targets for Reap Soul');
-                return;
-            } else if (availablePlayers.length === 1) {
-                // Only one opponent, execute directly
-                const targetId = availablePlayers[0];
-                if (targetId) {
-                    this['bgaPerformAction']('reapSoul', {targetPlayerId: parseInt(targetId)});
+            // Reap Soul can only target players with 2 or more dice
+            this.selectTarget(
+                (playerId: string) => {
+                    this['bgaPerformAction']('reapSoul', {targetPlayerId: parseInt(playerId)});
+                },
+                (playerId: string) => {
+                    const diceCount = this.playerDiceCounts[playerId] || 0;
+                    if (diceCount <= 1) {
+                        return {valid: false, reason: `${diceCount} dice`};
+                    }
+                    return {valid: true};
                 }
-            } else {
-                // Multiple opponents, show target selection
-                this.showReapSoulTargetSelection();
-            }
+            );
         }
-    }
-
-    private showReapSoulTargetSelection(): void {
-        // Clear existing action buttons
-        this['removeActionButtons']();
-
-        // Get available players
-        const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
-
-        // Add target selection buttons
-        availablePlayers.forEach((playerId) => {
-            const playerName = this['gamedatas']?.players?.[playerId]?.name || `Player ${playerId}`;
-            this['addActionButton'](`reap_target_${playerId}_btn`, playerName, () => {
-                this['bgaPerformAction']('reapSoul', {targetPlayerId: parseInt(playerId)});
-            });
-        });
-
-        // Add a back button to return to main actions
-        this['addActionButton']('back_to_actions_btn', _('← Back'), () => {
-            this['removeActionButtons']();
-            this.addPlayerTurnButtons();
-        });
     }
 
     onPentagram(): void {
@@ -1115,7 +1090,10 @@ export default class DevilsDice extends (GameGui as any) {
         return symbol;
     }
 
-    private selectTarget(callback: (playerId: string) => void): void {
+    private selectTarget(
+        callback: (playerId: string) => void,
+        isValidTarget?: (playerId: string) => {valid: boolean; reason?: string}
+    ): void {
         const availablePlayers = Object.keys(this['gamedatas']?.players || {}).filter((id) => id !== this['player_id'].toString());
 
         if (availablePlayers.length === 0) {
@@ -1123,17 +1101,54 @@ export default class DevilsDice extends (GameGui as any) {
             return;
         }
 
-        if (availablePlayers.length === 1) {
-            const playerId = availablePlayers[0];
+        // Filter to valid targets if validator provided
+        const validPlayers = isValidTarget
+            ? availablePlayers.filter(id => isValidTarget(id).valid)
+            : availablePlayers;
+
+        if (validPlayers.length === 0) {
+            this.showMessage(_('No valid targets available'), 'error');
+            return;
+        }
+
+        if (validPlayers.length === 1 && availablePlayers.length === 1) {
+            // Only one opponent and they're valid - execute directly
+            const playerId = validPlayers[0];
             if (playerId) {
                 callback(playerId);
             }
             return;
         }
 
-        // Show target selection UI
-        this.targetSelectionCallback = callback;
-        this.updatePlayersInfo();
+        // Show target selection UI - clear existing buttons and add target buttons
+        this['removeActionButtons']();
+
+        availablePlayers.forEach((playerId) => {
+            const playerName = this['gamedatas']?.players?.[playerId]?.name || `Player ${playerId}`;
+            const validation = isValidTarget ? isValidTarget(playerId) : {valid: true};
+
+            if (validation.valid) {
+                // Valid target - add clickable button
+                this['addActionButton'](`target_${playerId}_btn`, playerName, () => {
+                    callback(playerId);
+                });
+            } else {
+                // Invalid target - add disabled button with reason
+                const buttonLabel = validation.reason
+                    ? `${playerName} (${validation.reason})`
+                    : playerName;
+                this['addActionButton'](`target_${playerId}_btn`, buttonLabel, () => {
+                    // Do nothing - button is disabled
+                }, null, false, 'gray');
+            }
+        });
+
+        // Add a back button to return to main actions
+        this['addActionButton']('back_to_actions_btn', _('← Back'), () => {
+            this['removeActionButtons']();
+            this.addPlayerTurnButtons();
+        });
+
         this.showMessage(_('Select a target player'), 'info');
     }
 

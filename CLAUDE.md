@@ -70,6 +70,15 @@ The game supports these main actions:
 - Prettier for code formatting
 - Live Sass Compiler for SCSS
 - PHPUnit integration for testing
+- SFTP extension configured for automatic file upload to BGA Studio
+
+### BGA Studio Connection
+- **SSH Key:** `~/.ssh/id_ed25519_bga` (ED25519 key)
+- **Public key added to BGA Studio account** for secure authentication
+- **SFTP Config:** `.vscode/sftp.json` uses SSH key authentication
+- **Server:** 1.studio.boardgamearena.com:2022
+- **Username:** hedgehogterror
+- **Auto-upload enabled:** Files automatically sync to `/devilsdice/` on save
 
 ### File Watching
 The project uses `tsc-watch` and Live Sass Compiler for automatic rebuilding during development.

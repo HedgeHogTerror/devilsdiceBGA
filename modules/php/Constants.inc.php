@@ -73,4 +73,29 @@ class Actions {
                 return 'unknown';
         }
     }
+
+    public static function getActionLabel($actionId) {
+        switch ($actionId) {
+            case self::RAISE_HELL:
+                return clienttranslate('Raise Hell');
+            case self::HARVEST_SKULLS:
+                return clienttranslate('Harvest Skulls');
+            case self::EXTORT:
+                return clienttranslate('Extort');
+            case self::REAP_SOUL:
+                return clienttranslate('Reap Soul');
+            case self::PENTAGRAM:
+                return clienttranslate('Pentagram');
+            case self::IMPS_SET:
+                return clienttranslate('Imps Set');
+            case self::SATANS_STEAL:
+                return clienttranslate('Satan\'s Steal');
+            case self::CHALLENGE:
+                return clienttranslate('Challenge');
+            case self::BLOCK:
+                return clienttranslate('Block');
+            default:
+                return clienttranslate('Unknown');
+        }
+    }
 }

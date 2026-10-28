@@ -211,6 +211,33 @@ class Game extends \Bga\GameFramework\Table {
         $this->gamestate->nextState('playerTurn');
     }
 
+    public function argChallengeWindow() {
+        // Provide arguments for the challengeWindow state
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $currentAction = $this->getGameStateValue('current_action');
+        $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+
+        // Get the action label for display (human-readable)
+        $actionLabel = Actions::getActionLabel($currentAction);
+
+        // Build the result
+        $result = [
+            'action_player_name' => $this->getPlayerNameById($actionPlayerId),
+            'action_name' => $actionLabel,
+            'action_id' => $currentAction,
+            'action_player_id' => $actionPlayerId,
+            '_private' => []
+        ];
+
+        // Add target player info if there is one
+        if ($targetPlayerId > 0) {
+            $result['target_player'] = $this->getPlayerNameById($targetPlayerId);
+            $result['target_player_id'] = $targetPlayerId;
+        }
+
+        return $result;
+    }
+
     public function stChallengeWindow() {
         $this->debug("🚀🚀🚀 FRESH CODE v5: stChallengeWindow - ANTI-LOOP PROTECTION 🚀🚀🚀");
 
@@ -264,9 +291,45 @@ class Game extends \Bga\GameFramework\Table {
         }
     }
 
+    public function argBlockWindow() {
+        // Provide arguments for the blockWindow state
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $currentAction = $this->getGameStateValue('current_action');
+        $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+
+        // Get the action label for display
+        $actionLabel = Actions::getActionLabel($currentAction);
+
+        $result = [
+            'action_player_name' => $this->getPlayerNameById($actionPlayerId),
+            'target_player_name' => $this->getPlayerNameById($targetPlayerId),
+            'action_name' => $actionLabel,
+            'action_id' => $currentAction,
+            'action_player_id' => $actionPlayerId,
+            'target_player_id' => $targetPlayerId
+        ];
+
+        return $result;
+    }
+
+    public function stBlockWindow() {
+        // Set the target player as the active player for the block window
+        $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+
+        // Safety check
+        if ($targetPlayerId === 0) {
+            $this->debug("DevilsDice stBlockWindow: ⚠️ ERROR: targetPlayerId is 0 - skipping block window");
+            $this->gamestate->nextState('resolveAction');
+            return;
+        }
+
+        $this->debug("DevilsDice stBlockWindow: Setting target player $targetPlayerId as active");
+        $this->gamestate->changeActivePlayer($targetPlayerId);
+    }
+
     public function stResolveChallenge() {
-        $challengerId = $this->getGameStateValue('challenge_player');
-        $actionPlayerId = $this->getGameStateValue('current_action_player');
+        $challengerId = intval($this->getGameStateValue('challenge_player'));
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
         $currentAction = $this->getGameStateValue('current_action');
 
         // Get the challenged player's dice
@@ -335,9 +398,9 @@ class Game extends \Bga\GameFramework\Table {
 
     public function stResolveAction() {
         try {
-            $actionPlayerId = $this->getGameStateValue('current_action_player');
+            $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
             $currentAction = $this->getGameStateValue('current_action');
-            $targetPlayerId = $this->getGameStateValue('current_target_player');
+            $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
 
             $actionName = Actions::getActionName($currentAction);
             $this->debug("🔧🔧 FRESH v5: stResolveAction - Player: $actionPlayerId, Action: $currentAction ($actionName), Target: $targetPlayerId");

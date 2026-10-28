@@ -34,10 +34,12 @@ interface DefinedGameStates extends ValidateGameStates<{
 	},
 	3: {
 		'name': 'challengeWindow',
-		'description': 'Players may challenge ${actplayer}s claim',
+		'description': 'Other players may challenge ${action_player_name}\\\'s claim of ${action_name}',
 		'type': 'multipleactiveplayer',
 		'action': 'stChallengeWindow',
-		'descriptionmyturn': 'Other players may challenge your claim',
+		'args': 'argChallengeWindow',
+		'descriptionmyturn': '${you} may challenge ${action_player_name}\\\'s claim of ${action_name}',
+		'descriptionmyturninactive': 'Waiting for other players to decide...',
 		'possibleactions': ['challenge', 'pass'],
 		'transitions': {
 			'resolveChallenge': 4,
@@ -69,8 +71,10 @@ interface DefinedGameStates extends ValidateGameStates<{
 	},
 	6: {
 		'name': 'blockWindow',
-		'description': '${target_player} may block this action',
+		'description': '${target_player_name} may block this action',
 		'type': 'activeplayer',
+		'action': 'stBlockWindow',
+		'args': 'argBlockWindow',
 		'descriptionmyturn': '${you} may block this action',
 		'possibleactions': ['block', 'pass'],
 		'transitions': {
@@ -114,6 +118,8 @@ interface DefinedGameStates extends ValidateGameStates<{
 }> {}
 
 interface GameStateArgs {
+	'argChallengeWindow': object,
+	'argBlockWindow': object,
 	'argChooseDiceOverflowFace': object,
 }
 

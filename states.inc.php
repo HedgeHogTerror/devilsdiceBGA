@@ -21,6 +21,7 @@ if (false) {
 	$game->stChallengeWindow();
 	$game->stResolveChallenge();
 	$game->stResolveAction();
+	$game->stBlockWindow();
 	$game->stCheckWin();
 	$game->stRolloff();
 	$game->stChooseDiceOverflowFace();
@@ -49,10 +50,12 @@ $machinestates = array(
 	),
 	3 => array(
 		'name' => 'challengeWindow',
-		'description' => clienttranslate('Players may challenge ${actplayer}s claim'),
+		'description' => clienttranslate('Other players may challenge ${action_player_name}\'s claim of ${action_name}'),
 		'type' => 'multipleactiveplayer',
 		'action' => 'stChallengeWindow',
-		'descriptionmyturn' => clienttranslate('Other players may challenge your claim'),
+		'args' => 'argChallengeWindow',
+		'descriptionmyturn' => clienttranslate('${you} may challenge ${action_player_name}\'s claim of ${action_name}'),
+		'descriptionmyturninactive' => 'Waiting for other players to decide...',
 		'possibleactions' => ['challenge', 'pass'],
 		'transitions' => array(
 			'resolveChallenge' => 4,
@@ -84,8 +87,10 @@ $machinestates = array(
 	),
 	6 => array(
 		'name' => 'blockWindow',
-		'description' => clienttranslate('${target_player} may block this action'),
+		'description' => clienttranslate('${target_player_name} may block this action'),
 		'type' => 'activeplayer',
+		'action' => 'stBlockWindow',
+		'args' => 'argBlockWindow',
 		'descriptionmyturn' => clienttranslate('${you} may block this action'),
 		'possibleactions' => ['block', 'pass'],
 		'transitions' => array(
