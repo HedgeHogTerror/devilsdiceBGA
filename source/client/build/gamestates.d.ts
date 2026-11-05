@@ -45,6 +45,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'resolveChallenge': 4,
 			'blockWindow': 6,
 			'resolveAction': 5,
+			'checkWin': 7,
 		},
 	},
 	4: {

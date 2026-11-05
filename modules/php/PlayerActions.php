@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 namespace Bga\Games\DevilsDice;
+// Updated: 2026-11-05 19:49 - Block action fix
 
 /**
  * PlayerActions - Handles all player action input methods

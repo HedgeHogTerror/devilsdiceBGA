@@ -61,6 +61,7 @@ $machinestates = array(
 			'resolveChallenge' => 4,
 			'blockWindow' => 6,
 			'resolveAction' => 5,
+			'checkWin' => 7,
 		),
 	),
 	4 => array(
