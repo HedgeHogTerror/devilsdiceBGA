@@ -276,8 +276,26 @@ class Game extends \Bga\GameFramework\Table {
 
         // Determine the next state based on the action type
         $nextState = 'resolveAction';
-        if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
+
+        // Special handling for BLOCK action
+        if ($currentAction == Actions::BLOCK) {
+            // If the block is not challenged, it succeeds - cancel the original action
+            $this->debug("DevilsDice stChallengeWindow: Action is BLOCK - if not challenged, block succeeds");
+            $nextState = 'checkWin'; // Skip resolveAction, go straight to checkWin (which will move to next player)
+        } else if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
             $nextState = 'blockWindow';
+        }
+
+        // CRITICAL FIX: If going to blockWindow, set the target as active player BEFORE transition
+        if ($nextState === 'blockWindow') {
+            $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+            if ($targetPlayerId > 0) {
+                $this->debug("DevilsDice stChallengeWindow: 🔧 Pre-setting active player to target $targetPlayerId for blockWindow");
+                $this->gamestate->changeActivePlayer($targetPlayerId);
+            } else {
+                $this->debug("DevilsDice stChallengeWindow: ⚠️ WARNING: No target player for blockWindow, skipping to checkWin");
+                $nextState = 'checkWin';
+            }
         }
 
         // Set only challenge players as multiactive
@@ -313,8 +331,16 @@ class Game extends \Bga\GameFramework\Table {
     }
 
     public function stBlockWindow() {
+        $this->debug("🛑🛑🛑 stBlockWindow CALLED 🛑🛑🛑");
+
         // Set the target player as the active player for the block window
         $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $currentActivePlayer = intval($this->getActivePlayerId());
+
+        $this->debug("DevilsDice stBlockWindow: Target player: $targetPlayerId");
+        $this->debug("DevilsDice stBlockWindow: Action player: $actionPlayerId");
+        $this->debug("DevilsDice stBlockWindow: Current active player BEFORE change: $currentActivePlayer");
 
         // Safety check
         if ($targetPlayerId === 0) {
@@ -323,14 +349,41 @@ class Game extends \Bga\GameFramework\Table {
             return;
         }
 
-        $this->debug("DevilsDice stBlockWindow: Setting target player $targetPlayerId as active");
+        // CRITICAL FIX: Check if we're already in the right state
+        if ($currentActivePlayer === $targetPlayerId) {
+            $this->debug("DevilsDice stBlockWindow: ✅ Active player is already correct: $targetPlayerId");
+            return;
+        }
+
+        // If the action player is currently active (shouldn't be), this is the bug
+        if ($currentActivePlayer === $actionPlayerId) {
+            $this->debug("DevilsDice stBlockWindow: ⚠️ BUG DETECTED: Action player $actionPlayerId is active, should be target $targetPlayerId");
+        }
+
+        $this->debug("DevilsDice stBlockWindow: Changing active player from $currentActivePlayer to $targetPlayerId");
         $this->gamestate->changeActivePlayer($targetPlayerId);
+
+        $newActivePlayer = intval($this->getActivePlayerId());
+        $this->debug("DevilsDice stBlockWindow: Current active player AFTER change: $newActivePlayer");
+
+        if ($newActivePlayer !== $targetPlayerId) {
+            $this->debug("DevilsDice stBlockWindow: ⚠️ ERROR: Active player did not change! Expected $targetPlayerId, got $newActivePlayer");
+            $this->warn("DevilsDice stBlockWindow: changeActivePlayer() failed - this may cause a loop!");
+        } else {
+            $this->debug("DevilsDice stBlockWindow: ✅ Successfully set active player to target player $targetPlayerId");
+        }
     }
 
     public function stResolveChallenge() {
         $challengerId = intval($this->getGameStateValue('challenge_player'));
         $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
         $currentAction = $this->getGameStateValue('current_action');
+
+        $this->debug("DevilsDice stResolveChallenge: Challenger: $challengerId, Action player: $actionPlayerId, Action: $currentAction");
+
+        // Check if this is a challenge to a BLOCK
+        $isBlockChallenge = ($currentAction == Actions::BLOCK);
+        $actionData = json_decode((string)$this->getGameStateValue('action_data'), true) ?: [];
 
         // Get the challenged player's dice
         $playerDice = $this->getCollectionFromDb(
@@ -340,8 +393,7 @@ class Game extends \Bga\GameFramework\Table {
         $challengeSuccessful = !DiceValidator::validateActionClaim($currentAction, array_column($playerDice, 'face'), $this);
 
         if ($challengeSuccessful) {
-            // Note: stealDiceFromPlayer already rerolls both players' dice
-
+            // Challenge successful - challenger steals dice from the lying player
             $this->notifyAllPlayers(
                 'challengeSuccessful',
                 clienttranslate('${challenger} successfully challenges ${player}\'s claim - both players reroll their dice'),
@@ -353,27 +405,45 @@ class Game extends \Bga\GameFramework\Table {
                 ]
             );
 
-            // Challenge successful - challenger steals dice, action cancelled
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
-            // Check for overflow before moving to next player
-            // If the challenger was at 6 dice, stealDiceFromPlayer set overflow flags
+            // Special handling for BLOCK challenges
+            if ($isBlockChallenge && isset($actionData['blocked_action'])) {
+                // Block was challenged successfully - blocker was lying
+                // Restore the original action and let it proceed
+                $this->debug("DevilsDice stResolveChallenge: Block challenged successfully - restoring original action");
+                $this->setGameStateValue('current_action', $actionData['blocked_action']);
+                $this->setGameStateValue('current_action_player', $actionData['blocked_action_player']);
+                // Clear the block data
+                unset($actionData['blocked_action']);
+                unset($actionData['blocked_action_player']);
+                $this->setGameStateValue('action_data', json_encode($actionData));
+            }
+
+            // Check for overflow before continuing
             $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
             if ((int)$overflowPlayer > 0) {
-                $this->debug("DevilsDice stResolveChallenge: Overflow detected after successful challenge for player $overflowPlayer");
-                // Clear action state since the action was cancelled
-                $this->clearActionState();
-                // Set a flag to indicate overflow came from challenge (not normal action)
-                // This tells chooseDiceOverflowFace to go to playerTurn instead of checkWin
-                $this->setGameStateValue('action_data', json_encode(['overflow_from_challenge' => true]));
-                // Transition to chooseDiceOverflowFace to handle the overflow
+                $this->debug("DevilsDice stResolveChallenge: Overflow detected for player $overflowPlayer");
+                if ($isBlockChallenge && isset($actionData['blocked_action'])) {
+                    // Overflow during block challenge - need to handle overflow then continue with original action
+                    $this->setGameStateValue('action_data', json_encode(array_merge($actionData, ['overflow_from_challenge' => true])));
+                } else {
+                    // Normal challenge overflow - action is cancelled
+                    $this->clearActionState();
+                    $this->setGameStateValue('action_data', json_encode(['overflow_from_challenge' => true]));
+                }
                 $this->gamestate->nextState('chooseDiceOverflowFace');
             } else {
-                // No overflow, skip the challenged player's turn and move to next player
-                $this->cancelActionAndContinue();
+                if ($isBlockChallenge && $this->getGameStateValue('current_action') != Actions::BLOCK) {
+                    // Block was challenged, blocker failed - continue with original action
+                    $this->gamestate->nextState('resolveAction');
+                } else {
+                    // Normal challenge or action is now cancelled
+                    $this->cancelActionAndContinue();
+                }
             }
         } else {
-            // Challenge failed - challenger loses dice to Satan's pool
+            // Challenge failed - blocker was telling the truth, original action is cancelled
             $this->notifyAllPlayers(
                 'challengeFailed',
                 clienttranslate('${challenger}\'s challenge fails against ${player}'),
@@ -387,11 +457,17 @@ class Game extends \Bga\GameFramework\Table {
 
             $this->moveDiceToSatansPool($challengerId);
 
-            // Continue with original action
-            if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
-                $this->gamestate->nextState('blockWindow');
+            if ($isBlockChallenge) {
+                // Block was NOT successfully challenged - block stands, original action is cancelled
+                $this->debug("DevilsDice stResolveChallenge: Block challenge failed - block succeeds, cancelling original action");
+                $this->gamestate->nextState('checkWin');
             } else {
-                $this->gamestate->nextState('resolveAction');
+                // Normal action challenge failed - continue with the action
+                if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
+                    $this->gamestate->nextState('blockWindow');
+                } else {
+                    $this->gamestate->nextState('resolveAction');
+                }
             }
         }
     }
@@ -435,6 +511,11 @@ class Game extends \Bga\GameFramework\Table {
                     $this->debug("🔧 stResolveAction: executing SATANS_STEAL");
                     ActionExecutor::executeSatansSteal($this, $actionPlayerId);
                     break;
+                case Actions::BLOCK:
+                    // BLOCK should not reach resolveAction normally - it should go to checkWin
+                    // But if it does (via old PASS code path), just treat it as no-op
+                    $this->debug("🔧 stResolveAction: BLOCK action - no execution needed (block succeeded)");
+                    break;
                 default:
                     $this->debug("🔧 ERROR: Unknown action: $currentAction ($actionName) (type: " . gettype($currentAction) . ")");
                     break;
@@ -460,6 +541,10 @@ class Game extends \Bga\GameFramework\Table {
 
     public function stCheckWin() {
         $this->debug("🏁🏁🏁 DevilsDice stCheckWin: ENTERED CHECK WIN FUNCTION 🏁🏁🏁");
+
+        $currentActivePlayer = intval($this->getActivePlayerId());
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $this->debug("🏁 stCheckWin: Current active player: $currentActivePlayer, Action player: $actionPlayerId");
 
         // First, check for pending overflow from action execution
         $actionDataJson = $this->getGameStateValue('action_data');
@@ -531,7 +616,17 @@ class Game extends \Bga\GameFramework\Table {
      * Move to next player without clearing action state (for normal game flow)
      */
     private function continueToNextPlayer() {
-        $this->debug("DevilsDice continueToNextPlayer: Moving to next player WITHOUT clearing action state");
+        $currentActivePlayer = intval($this->getActivePlayerId());
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $this->debug("DevilsDice continueToNextPlayer: Current active: $currentActivePlayer, Action player: $actionPlayerId");
+
+        // CRITICAL FIX: Restore active player to action player if needed
+        if ($actionPlayerId > 0 && $currentActivePlayer !== $actionPlayerId) {
+            $this->debug("DevilsDice continueToNextPlayer: ⚠️ Restoring active player to action player $actionPlayerId");
+            $this->gamestate->changeActivePlayer($actionPlayerId);
+        }
+
+        $this->debug("DevilsDice continueToNextPlayer: Calling activeNextPlayer");
         $this->activeNextPlayer();
         $this->gamestate->nextState('playerTurn');
     }
@@ -540,13 +635,50 @@ class Game extends \Bga\GameFramework\Table {
      * Clear action state and move to next player (for cancelled actions)
      */
     private function cancelActionAndContinue() {
-        $this->debug("🚀 cancelActionAndContinue: ENTERED - Clearing action state and moving to next player");
+        $currentActivePlayer = intval($this->getActivePlayerId());
+        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
+        $currentAction = $this->getGameStateValue('current_action');
+
+        // Get all player IDs to show turn order
+        $players = $this->loadPlayersBasicInfos();
+        $playerIds = array_keys($players);
+        sort($playerIds);
+        $this->debug("🚀 cancelActionAndContinue: Player order: " . implode(' → ', $playerIds));
+        $this->debug("🚀 cancelActionAndContinue: ENTERED - Current active: $currentActivePlayer, Action player: $actionPlayerId, Action: $currentAction");
+
+        // CRITICAL FIX: Check if this was a blocked action
+        $actionData = json_decode((string)$this->getGameStateValue('action_data'), true) ?: [];
+        if ($currentAction == Actions::BLOCK && isset($actionData['blocked_action_player'])) {
+            // This is a successful block - the original action player should have the turn end
+            $originalActionPlayer = intval($actionData['blocked_action_player']);
+            $this->debug("🚀 cancelActionAndContinue: 🛡️ BLOCK SUCCEEDED - Original action player was $originalActionPlayer, blocker was $actionPlayerId");
+            $actionPlayerId = $originalActionPlayer; // Use original action player for turn progression
+        }
+
+        // If the active player was changed (e.g., for block window),
+        // restore it to the action player before calling activeNextPlayer
+        if ($actionPlayerId > 0 && $currentActivePlayer !== $actionPlayerId) {
+            $this->debug("🚀 cancelActionAndContinue: ⚠️ Active player mismatch! Restoring to action player $actionPlayerId");
+            $this->gamestate->changeActivePlayer($actionPlayerId);
+            $restoredActive = intval($this->getActivePlayerId());
+            $this->debug("🚀 cancelActionAndContinue: Active player restored to: $restoredActive");
+        } else {
+            $this->debug("🚀 cancelActionAndContinue: ✓ Active player already matches action player, no restoration needed");
+        }
+
         $this->clearActionState();
         $this->debug("🚀 cancelActionAndContinue: Action state cleared, calling activeNextPlayer");
+
+        $beforeNext = intval($this->getActivePlayerId());
         $this->activeNextPlayer();
+        $newActivePlayer = intval($this->getActivePlayerId());
+        $this->debug("🚀 cancelActionAndContinue: activeNextPlayer: $beforeNext → $newActivePlayer");
+
         $this->debug("🚀 cancelActionAndContinue: About to transition to playerTurn");
         $this->gamestate->nextState('playerTurn');
-        $this->debug("🚀 cancelActionAndContinue: Successfully transitioned to playerTurn - COMPLETE");
+
+        $finalActivePlayer = intval($this->getActivePlayerId());
+        $this->debug("🚀 cancelActionAndContinue: ✓ COMPLETE - Final active player: $finalActivePlayer");
     }
 
     public function stRolloff() {

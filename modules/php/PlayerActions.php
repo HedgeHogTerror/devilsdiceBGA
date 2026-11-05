@@ -148,13 +148,24 @@ class PlayerActions {
         $blockerId = intval($game->getCurrentPlayerId());
 
         $currentAction = $game->getGameStateValue('current_action');
+        $originalActionPlayer = intval($game->getGameStateValue('current_action_player'));
 
         // Only certain actions can be blocked
         if (!in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
             throw new \BgaUserException("This action cannot be blocked");
         }
 
-        // Set up block challenge window
+        $game->debug("DevilsDice block(): Blocking action $currentAction from player $originalActionPlayer");
+
+        // Save the original action and player in action_data so we can restore it later
+        $actionData = [
+            'blocked_action' => $currentAction,
+            'blocked_action_player' => $originalActionPlayer
+        ];
+        $game->setGameStateValue('action_data', json_encode($actionData));
+        $game->debug("DevilsDice block(): Saved original action data: " . json_encode($actionData));
+
+        // Set up block challenge window - blocker becomes the action player
         $game->setGameStateValue('current_action_player', $blockerId);
         $game->setGameStateValue('current_action', Actions::BLOCK);
 
