@@ -271,8 +271,14 @@ class Game extends \Bga\GameFramework\Table {
         foreach ($players as $playerId => $player) {
             $playerIdInt = intval($playerId);
             if ($playerIdInt !== $actionPlayerId) {
-                $challengePlayers[] = strval($playerIdInt);
-                $this->debug("DevilsDice stChallengeWindow: Added player $playerIdInt to challenge list");
+                // Check if player has any dice - players with 0 dice can't challenge
+                $diceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerIdInt AND location = 'hand'"));
+                if ($diceCount > 0) {
+                    $challengePlayers[] = strval($playerIdInt);
+                    $this->debug("DevilsDice stChallengeWindow: Added player $playerIdInt to challenge list (has $diceCount dice)");
+                } else {
+                    $this->debug("DevilsDice stChallengeWindow: Excluded player $playerIdInt - has 0 dice, auto-passing");
+                }
             } else {
                 $this->debug("DevilsDice stChallengeWindow: Excluded action player $playerIdInt");
             }
@@ -355,6 +361,14 @@ class Game extends \Bga\GameFramework\Table {
         // Safety check
         if ($targetPlayerId === 0) {
             $this->debug("DevilsDice stBlockWindow: ⚠️ ERROR: targetPlayerId is 0 - skipping block window");
+            $this->gamestate->nextState('resolveAction');
+            return;
+        }
+
+        // Check if target player has 0 dice - if so, auto-pass (can't block)
+        $targetDiceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $targetPlayerId AND location = 'hand'"));
+        if ($targetDiceCount === 0) {
+            $this->debug("DevilsDice stBlockWindow: Target player $targetPlayerId has 0 dice, auto-passing block window");
             $this->gamestate->nextState('resolveAction');
             return;
         }

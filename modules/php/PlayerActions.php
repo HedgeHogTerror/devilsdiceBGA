@@ -11,11 +11,22 @@ namespace Bga\Games\DevilsDice;
  */
 class PlayerActions {
     /**
+     * Check if player has at least one die (required for most actions)
+     */
+    private static function requireDice($game, $playerId) {
+        $diceCount = intval($game->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+        if ($diceCount === 0) {
+            throw new \BgaUserException("You need at least one die to perform this action");
+        }
+    }
+
+    /**
      * Raise Hell action - player declares they want to raise hell
      */
     public static function raiseHell($game) {
         $game->checkAction('raiseHell');
         $playerId = intval($game->getCurrentPlayerId());
+        self::requireDice($game, $playerId);
 
         $game->setGameStateValue('current_action', Actions::RAISE_HELL);
         $game->setGameStateValue('current_action_player', $playerId);
@@ -29,6 +40,7 @@ class PlayerActions {
     public static function harvestSkulls($game) {
         $game->checkAction('harvestSkulls');
         $playerId = intval($game->getCurrentPlayerId());
+        self::requireDice($game, $playerId);
 
         $game->setGameStateValue('current_action', Actions::HARVEST_SKULLS);
         $game->setGameStateValue('current_action_player', $playerId);
@@ -42,6 +54,7 @@ class PlayerActions {
     public static function extort($game, $targetPlayerId) {
         $game->checkAction('extort');
         $playerId = intval($game->getCurrentPlayerId());
+        self::requireDice($game, $playerId);
 
         $game->setGameStateValue('current_action', Actions::EXTORT);
         $game->setGameStateValue('current_action_player', $playerId);
@@ -56,6 +69,7 @@ class PlayerActions {
     public static function reapSoul($game, $targetPlayerId) {
         $game->checkAction('reapSoul');
         $playerId = intval($game->getCurrentPlayerId());
+        self::requireDice($game, $playerId);
 
         // Check if player has enough skull tokens
         if (!TokenManager::hasEnoughSkullTokens($game, $playerId, 2)) {
@@ -75,6 +89,7 @@ class PlayerActions {
     public static function pentagram($game) {
         $game->checkAction('pentagram');
         $playerId = intval($game->getCurrentPlayerId());
+        self::requireDice($game, $playerId);
 
         $game->setGameStateValue('current_action', Actions::PENTAGRAM);
         $game->setGameStateValue('current_action_player', $playerId);
