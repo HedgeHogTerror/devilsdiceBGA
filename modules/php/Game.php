@@ -421,16 +421,17 @@ class Game extends \Bga\GameFramework\Table {
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
             // Special handling for BLOCK challenges
-            if ($isBlockChallenge && isset($actionData['blocked_action'])) {
+            $blockedAction = intval($this->getGameStateValue('blocked_action'));
+            $blockedActionPlayer = intval($this->getGameStateValue('blocked_action_player'));
+
+            if ($isBlockChallenge && $blockedAction > 0 && $blockedActionPlayer > 0) {
                 // Block was challenged successfully - blocker was lying
                 // Restore the original action and let it proceed
                 $this->debug("DevilsDice stResolveChallenge: Block challenged successfully - restoring original action");
-                $this->setGameStateValue('current_action', $actionData['blocked_action']);
-                $this->setGameStateValue('current_action_player', $actionData['blocked_action_player']);
-                // Clear the block data
-                unset($actionData['blocked_action']);
-                unset($actionData['blocked_action_player']);
-                $this->setGameStateValue('action_data', json_encode($actionData));
+                $this->debug("DevilsDice stResolveChallenge: Restoring action $blockedAction from player $blockedActionPlayer");
+                $this->setGameStateValue('current_action', $blockedAction);
+                $this->setGameStateValue('current_action_player', $blockedActionPlayer);
+                // Note: current_target_player should already be set correctly (the blocker who lied)
             }
 
             // Check for overflow before continuing

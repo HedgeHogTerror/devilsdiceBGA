@@ -38,12 +38,14 @@ class DiceManager {
 
         // Get the new dice data and send notification
         $playerDice = self::getPlayerDice($game, $playerId);
-        $game->debug("DevilsDice rollDiceForPlayer: Player $playerId rerolled $currentCount dice");
+        // Get the actual current count after reroll (not the cached $currentCount from before)
+        $actualCount = count($playerDice);
+        $game->debug("DevilsDice rollDiceForPlayer: Player $playerId rerolled to $actualCount dice (was $currentCount before reroll)");
 
         $game->notifyAllPlayers('diceRerolled', '', [
             'playerId' => $playerId,
             'dice' => $playerDice,
-            'diceCount' => $currentCount
+            'diceCount' => $actualCount
         ]);
     }
 }
