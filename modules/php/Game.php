@@ -600,7 +600,7 @@ class Game extends \Bga\GameFramework\Table {
         if (count($winners) === 1) {
             // Single winner
             $winnerId = $winners[0];
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $winnerId);
+            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
 
             // Send win notification with confetti animation
             $this->notifyAllPlayers(
@@ -720,7 +720,7 @@ class Game extends \Bga\GameFramework\Table {
 
         if (count($finalWinners) === 1) {
             $winnerId = $finalWinners[0];
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = " . $winnerId);
+            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
             $this->notifyAllPlayers(
                 'rolloffWinner',
                 clienttranslate('${player} wins the rolloff with ${imps} imps'),
