@@ -150,26 +150,35 @@ class PlayerActions {
 
         $currentAction = $game->getGameStateValue('current_action');
         $originalActionPlayer = intval($game->getGameStateValue('current_action_player'));
+        $currentTarget = intval($game->getGameStateValue('current_target_player'));
 
         // Only certain actions can be blocked
         if (!in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
             throw new \BgaUserException("This action cannot be blocked");
         }
 
-        $game->debug("DevilsDice block(): Blocking action $currentAction from player $originalActionPlayer");
+        $game->debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $game->debug("🛡️ BLOCK(): Player $blockerId is BLOCKING");
+        $game->debug("🛡️ Original action: $currentAction");
+        $game->debug("🛡️ Original action player: $originalActionPlayer");
+        $game->debug("🛡️ Original target: $currentTarget");
+        $game->debug("🛡️ Blocker: $blockerId");
 
-        // Save the original action and player in action_data so we can restore it later
-        $actionData = [
-            'blocked_action' => $currentAction,
-            'blocked_action_player' => $originalActionPlayer
-        ];
-        $game->setGameStateValue('action_data', json_encode($actionData));
-        $game->debug("DevilsDice block(): Saved original action data: " . json_encode($actionData));
+        // Save the original action and player so we can restore it later
+        // Use separate numeric game state values since action_data (JSON) doesn't persist properly
+        $game->setGameStateValue('blocked_action', $currentAction);
+        $game->setGameStateValue('blocked_action_player', $originalActionPlayer);
+        $game->debug("🛡️ ✓ Saved blocked_action: $currentAction");
+        $game->debug("🛡️ ✓ Saved blocked_action_player: $originalActionPlayer");
 
         // Set up block challenge window - blocker becomes the action player
         $game->setGameStateValue('current_action_player', $blockerId);
         $game->setGameStateValue('current_action', Actions::BLOCK);
+        $game->debug("🛡️ ✓ Updated current_action_player: $originalActionPlayer → $blockerId");
+        $game->debug("🛡️ ✓ Updated current_action: $currentAction → " . Actions::BLOCK);
 
+        $game->debug("🛡️ Transitioning to challengeBlock (challengeWindow)");
+        $game->debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         $game->gamestate->nextState('challengeBlock');
     }
 

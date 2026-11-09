@@ -54,9 +54,11 @@ class Game extends \Bga\GameFramework\Table {
             "current_action_player" => 11,
             "current_target_player" => 12,
             "challenge_player" => 13,
-            "action_data" => 14,
+            "action_data" => 14, // DEPRECATED - use blocked_action and blocked_action_player instead
             "dice_overflow_player" => 15,
-            "dice_overflow_count" => 16
+            "dice_overflow_count" => 16,
+            "blocked_action" => 17,  // The action that was blocked
+            "blocked_action_player" => 18  // The player whose action was blocked
         ]);
     }
 
@@ -164,10 +166,14 @@ class Game extends \Bga\GameFramework\Table {
         $this->debug("DevilsDice stChooseDiceOverflowFace: State type is $stateType");
 
         if ($stateType === 'multipleactiveplayer') {
+            // Give the player 5 extra seconds to choose which face to sacrifice
+            $this->giveExtraTime(intval($overflowPlayer), 5);
             // Use multipleactiveplayer pattern
             $this->gamestate->setPlayersMultiactive(array(strval($overflowPlayer)), 'checkWin', false);
             $this->debug("DevilsDice stChooseDiceOverflowFace: Set player $overflowPlayer as multiactive");
         } else if ($stateType === 'activeplayer') {
+            // Give the player 5 extra seconds to choose which face to sacrifice
+            $this->giveExtraTime(intval($overflowPlayer), 5);
             // For activeplayer state, we need to ensure the correct player is active
             // But we CANNOT call changeActivePlayer here because we're already in the state
             // The active player must have been set before entering this state
@@ -300,6 +306,10 @@ class Game extends \Bga\GameFramework\Table {
 
         // Set only challenge players as multiactive
         if (count($challengePlayers) > 0) {
+            // Give players 5 extra seconds to decide whether to challenge
+            foreach ($challengePlayers as $playerId) {
+                $this->giveExtraTime(intval($playerId), 5);
+            }
             $this->gamestate->setPlayersMultiactive($challengePlayers, $nextState, true);
             $this->debug("DevilsDice stChallengeWindow: Set challenge players as multiactive with exclusive=true");
         } else {
@@ -362,6 +372,9 @@ class Game extends \Bga\GameFramework\Table {
 
         $this->debug("DevilsDice stBlockWindow: Changing active player from $currentActivePlayer to $targetPlayerId");
         $this->gamestate->changeActivePlayer($targetPlayerId);
+
+        // Give the target player 5 extra seconds to decide whether to block
+        $this->giveExtraTime($targetPlayerId, 5);
 
         $newActivePlayer = intval($this->getActivePlayerId());
         $this->debug("DevilsDice stBlockWindow: Current active player AFTER change: $newActivePlayer");
@@ -607,28 +620,22 @@ class Game extends \Bga\GameFramework\Table {
             $this->gamestate->nextState('rolloff');
         } else {
             // No winner yet, continue game - clear action state since action is complete
-            $this->debug("🏁 stCheckWin: No winner found, calling cancelActionAndContinue");
+            $this->debug("🏁 stCheckWin: No winner found");
+            $this->debug("🏁 stCheckWin: About to call cancelActionAndContinue()");
+            $this->debug("🏁 stCheckWin: Current state - active: " . $this->getActivePlayerId() . ", action_player: " . $this->getGameStateValue('current_action_player') . ", action: " . $this->getGameStateValue('current_action'));
             $this->cancelActionAndContinue();
+            $this->debug("🏁 stCheckWin: Returned from cancelActionAndContinue()");
         }
     }
 
     /**
-     * Move to next player without clearing action state (for normal game flow)
+     * Move to next player and clear action state (for normal game flow)
+     * This function is no longer used - cancelActionAndContinue handles all cases
      */
     private function continueToNextPlayer() {
-        $currentActivePlayer = intval($this->getActivePlayerId());
-        $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
-        $this->debug("DevilsDice continueToNextPlayer: Current active: $currentActivePlayer, Action player: $actionPlayerId");
-
-        // CRITICAL FIX: Restore active player to action player if needed
-        if ($actionPlayerId > 0 && $currentActivePlayer !== $actionPlayerId) {
-            $this->debug("DevilsDice continueToNextPlayer: ⚠️ Restoring active player to action player $actionPlayerId");
-            $this->gamestate->changeActivePlayer($actionPlayerId);
-        }
-
-        $this->debug("DevilsDice continueToNextPlayer: Calling activeNextPlayer");
-        $this->activeNextPlayer();
-        $this->gamestate->nextState('playerTurn');
+        // This function is deprecated - just call cancelActionAndContinue instead
+        $this->debug("⚠️ continueToNextPlayer: DEPRECATED - calling cancelActionAndContinue instead");
+        $this->cancelActionAndContinue();
     }
 
     /**
@@ -643,42 +650,58 @@ class Game extends \Bga\GameFramework\Table {
         $players = $this->loadPlayersBasicInfos();
         $playerIds = array_keys($players);
         sort($playerIds);
-        $this->debug("🚀 cancelActionAndContinue: Player order: " . implode(' → ', $playerIds));
-        $this->debug("🚀 cancelActionAndContinue: ENTERED - Current active: $currentActivePlayer, Action player: $actionPlayerId, Action: $currentAction");
+        $this->debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->debug("🚀 cancelActionAndContinue: ENTERED");
+        $this->debug("🚀 Player order: " . implode(' → ', $playerIds));
+        $this->debug("🚀 Current active: $currentActivePlayer");
+        $this->debug("🚀 Action player (from state): $actionPlayerId");
+        $this->debug("🚀 Current action: $currentAction");
 
         // CRITICAL FIX: Check if this was a blocked action
-        $actionData = json_decode((string)$this->getGameStateValue('action_data'), true) ?: [];
-        if ($currentAction == Actions::BLOCK && isset($actionData['blocked_action_player'])) {
+        $blockedAction = intval($this->getGameStateValue('blocked_action'));
+        $blockedActionPlayer = intval($this->getGameStateValue('blocked_action_player'));
+        $this->debug("🚀 blocked_action: $blockedAction");
+        $this->debug("🚀 blocked_action_player: $blockedActionPlayer");
+
+        if ($currentAction == Actions::BLOCK && $blockedActionPlayer > 0) {
             // This is a successful block - the original action player should have the turn end
-            $originalActionPlayer = intval($actionData['blocked_action_player']);
-            $this->debug("🚀 cancelActionAndContinue: 🛡️ BLOCK SUCCEEDED - Original action player was $originalActionPlayer, blocker was $actionPlayerId");
-            $actionPlayerId = $originalActionPlayer; // Use original action player for turn progression
+            $this->debug("🚀 🛡️ BLOCK DETECTED!");
+            $this->debug("🚀 🛡️ Original action that was blocked: $blockedAction");
+            $this->debug("🚀 🛡️ Original action player: $blockedActionPlayer");
+            $this->debug("🚀 🛡️ Blocker (current action_player): $actionPlayerId");
+            $this->debug("🚀 🛡️ USING original action player ($blockedActionPlayer) for turn progression");
+            $actionPlayerId = $blockedActionPlayer; // Use original action player for turn progression
         }
+
+        $this->debug("🚀 Final actionPlayerId to use for progression: $actionPlayerId");
 
         // If the active player was changed (e.g., for block window),
         // restore it to the action player before calling activeNextPlayer
         if ($actionPlayerId > 0 && $currentActivePlayer !== $actionPlayerId) {
-            $this->debug("🚀 cancelActionAndContinue: ⚠️ Active player mismatch! Restoring to action player $actionPlayerId");
+            $this->debug("🚀 ⚠️ Active player mismatch! Restoring active player to action player");
+            $this->debug("🚀 ⚠️ Changing active player: $currentActivePlayer → $actionPlayerId");
             $this->gamestate->changeActivePlayer($actionPlayerId);
             $restoredActive = intval($this->getActivePlayerId());
-            $this->debug("🚀 cancelActionAndContinue: Active player restored to: $restoredActive");
+            $this->debug("🚀 ✓ Active player restored to: $restoredActive");
         } else {
-            $this->debug("🚀 cancelActionAndContinue: ✓ Active player already matches action player, no restoration needed");
+            $this->debug("🚀 ✓ Active player already matches action player, no restoration needed");
         }
 
         $this->clearActionState();
-        $this->debug("🚀 cancelActionAndContinue: Action state cleared, calling activeNextPlayer");
+        $this->debug("🚀 ✓ Action state cleared (action_data is now empty)");
 
         $beforeNext = intval($this->getActivePlayerId());
+        $this->debug("🚀 About to call activeNextPlayer() from player: $beforeNext");
         $this->activeNextPlayer();
         $newActivePlayer = intval($this->getActivePlayerId());
-        $this->debug("🚀 cancelActionAndContinue: activeNextPlayer: $beforeNext → $newActivePlayer");
+        $this->debug("🚀 ✓ activeNextPlayer() completed: $beforeNext → $newActivePlayer");
 
-        $this->debug("🚀 cancelActionAndContinue: About to transition to playerTurn");
+        $this->debug("🚀 About to transition to playerTurn state");
         $this->gamestate->nextState('playerTurn');
 
         $finalActivePlayer = intval($this->getActivePlayerId());
-        $this->debug("🚀 cancelActionAndContinue: ✓ COMPLETE - Final active player: $finalActivePlayer");
+        $this->debug("🚀 ✓ COMPLETE - Final active player after transition: $finalActivePlayer");
+        $this->debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
 
     public function stRolloff() {
@@ -751,6 +774,8 @@ class Game extends \Bga\GameFramework\Table {
         $this->setGameStateValue('current_target_player', 0);
         $this->setGameStateValue('challenge_player', 0);
         $this->setGameStateValue('action_data', '');
+        $this->setGameStateValue('blocked_action', 0);
+        $this->setGameStateValue('blocked_action_player', 0);
 
         $this->debug("DevilsDice clearActionState: Action state cleared, current_action_player now = 0");
     }
