@@ -262,10 +262,6 @@ class PlayerActions {
         // Add the dice to Satan's pool instead
         $game->DbQuery("INSERT INTO satans_pool (face) VALUES ('$face')");
 
-        // Clear overflow flags
-        $game->setGameStateValue('dice_overflow_player', 0);
-        $game->setGameStateValue('dice_overflow_count', 0);
-
         // Send notification
         $game->notifyAllPlayers(
             'diceToSatansPool',
@@ -279,22 +275,16 @@ class PlayerActions {
             ]
         );
 
-        // Check if overflow came from a challenge or normal action
-        $actionDataJson = $game->getGameStateValue('action_data');
-        $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
-        $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
+        // Clear overflow flags BEFORE transitioning
+        // Must be done before transition since stCheckWin will check these flags
+        $game->setGameStateValue('dice_overflow_player', 0);
+        $game->setGameStateValue('dice_overflow_count', 0);
+        $game->debug("DevilsDice chooseDiceOverflowFace: Cleared overflow flags");
 
-        // Determine next state: playerTurn if from challenge, checkWin if from action
-        $nextState = $overflowFromChallenge ? 'playerTurn' : 'checkWin';
-
-        if ($overflowFromChallenge) {
-            $game->debug("DevilsDice chooseDiceOverflowFace: Overflow from challenge, moving to next player");
-            // Clear the flag and move to next player
-            $game->setGameStateValue('action_data', '');
-            $game->activeNextPlayer();
-        } else {
-            $game->debug("DevilsDice chooseDiceOverflowFace: Overflow from action, checking for win");
-        }
+        // Always transition to checkWin - it will handle moving to next player and checking win condition
+        // checkWin calls cancelActionAndContinue which properly handles turn progression
+        $nextState = 'checkWin';
+        $game->debug("DevilsDice chooseDiceOverflowFace: Transitioning to checkWin");
 
         // Transition based on state type
         $state = $game->gamestate->state();

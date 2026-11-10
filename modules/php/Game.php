@@ -147,6 +147,13 @@ class Game extends \Bga\GameFramework\Table {
         // Provide arguments for the chooseDiceOverflowFace state
         $overflowPlayer = $this->getGameStateValue('dice_overflow_player');
 
+        // Safety check: if overflow player is 0 (already cleared), this is likely being called
+        // during a state transition after the action completed. Use active player as fallback.
+        if ($overflowPlayer == 0) {
+            $overflowPlayer = intval($this->getActivePlayerId());
+            $this->debug("DevilsDice argChooseDiceOverflowFace: overflow player was 0, using active player $overflowPlayer as fallback");
+        }
+
         return [
             'actplayer' => $this->getPlayerNameById($overflowPlayer),
             '_private' => [] // No private args needed
@@ -168,9 +175,11 @@ class Game extends \Bga\GameFramework\Table {
         if ($stateType === 'multipleactiveplayer') {
             // Give the player 5 extra seconds to choose which face to sacrifice
             $this->giveExtraTime(intval($overflowPlayer), 5);
-            // Use multipleactiveplayer pattern
-            $this->gamestate->setPlayersMultiactive(array(strval($overflowPlayer)), 'checkWin', false);
-            $this->debug("DevilsDice stChooseDiceOverflowFace: Set player $overflowPlayer as multiactive");
+
+            // Simply set ONLY the overflow player as multiactive
+            // The third parameter being true means EXCLUSIVE (replace existing, don't add)
+            $this->gamestate->setPlayersMultiactive(array(strval($overflowPlayer)), '', true);
+            $this->debug("DevilsDice stChooseDiceOverflowFace: Set player $overflowPlayer as multiactive (exclusive mode)");
         } else if ($stateType === 'activeplayer') {
             // Give the player 5 extra seconds to choose which face to sacrifice
             $this->giveExtraTime(intval($overflowPlayer), 5);
@@ -627,8 +636,10 @@ class Game extends \Bga\GameFramework\Table {
                 ]
             );
 
-            // Don't call nextState - framework will end the game automatically
-            // when it sees a player has won (player_score > 0)
+            // Transition to playerTurn - the framework will detect the win and end the game
+            // We must transition to a valid state, can't just stay in checkWin
+            $this->cancelActionAndContinue();
+            return;
         } else if (count($winners) > 1) {
             // Tie - need rolloff
             $this->setGameStateValue('action_data', (string)json_encode($winners));
