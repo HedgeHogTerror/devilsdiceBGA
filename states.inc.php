@@ -108,6 +108,7 @@ $machinestates = array(
 			'rolloff' => 8,
 			'playerTurn' => 2,
 			'chooseDiceOverflowFace' => 9,
+			'gameEnd' => 99,
 		),
 	),
 	8 => array(
@@ -131,5 +132,11 @@ $machinestates = array(
 			'checkWin' => 7,
 			'playerTurn' => 2,
 		),
+	),
+	99 => array(
+		'name' => 'gameEnd',
+		'description' => clienttranslate('End of game'),
+		'type' => 'manager',
+		'action' => 'stGameEnd',
 	),
 );

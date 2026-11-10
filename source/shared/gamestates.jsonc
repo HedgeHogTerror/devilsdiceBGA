@@ -126,7 +126,8 @@
 		"transitions": {
 			"rolloff": 8,
 			"playerTurn": 2,
-			"chooseDiceOverflowFace": 9
+			"chooseDiceOverflowFace": 9,
+			"gameEnd": 99
 		}
 	},
 
@@ -156,5 +157,13 @@
 			"checkWin": 7,
 			"playerTurn": 2
 		}
+	},
+
+	// The final state. Please do not modify.
+	"99": {
+		"name": "gameEnd",
+		"description": "End of game",
+		"type": "manager",
+		"action": "stGameEnd"
 	}
 }

@@ -92,6 +92,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'rolloff': 8,
 			'playerTurn': 2,
 			'chooseDiceOverflowFace': 9,
+			'gameEnd': 99,
 		},
 	},
 	8: {
@@ -115,6 +116,12 @@ interface DefinedGameStates extends ValidateGameStates<{
 			'checkWin': 7,
 			'playerTurn': 2,
 		},
+	},
+	99: {
+		'name': 'gameEnd',
+		'description': 'End of game',
+		'type': 'manager',
+		'action': 'stGameEnd',
 	},
 }> {}
 

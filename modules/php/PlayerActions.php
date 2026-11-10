@@ -276,7 +276,7 @@ class PlayerActions {
         );
 
         // Clear overflow flags BEFORE transitioning
-        // Must be done before transition since stCheckWin will check these flags
+        // This prevents checkWin from thinking there's still overflow pending
         $game->setGameStateValue('dice_overflow_player', 0);
         $game->setGameStateValue('dice_overflow_count', 0);
         $game->debug("DevilsDice chooseDiceOverflowFace: Cleared overflow flags");

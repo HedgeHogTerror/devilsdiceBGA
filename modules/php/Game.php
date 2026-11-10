@@ -577,7 +577,7 @@ class Game extends \Bga\GameFramework\Table {
     }
 
     public function stCheckWin() {
-        $this->debug("🏁🏁🏁 DevilsDice stCheckWin: ENTERED CHECK WIN FUNCTION 🏁🏁🏁");
+        $this->debug("🏁🏁🏁 DevilsDice stCheckWin: ENTERED CHECK WIN FUNCTION (v2024-11-10-FIX) 🏁🏁🏁");
 
         $currentActivePlayer = intval($this->getActivePlayerId());
         $actionPlayerId = intval($this->getGameStateValue('current_action_player'));
@@ -622,11 +622,12 @@ class Game extends \Bga\GameFramework\Table {
         $winners = GameValidator::findWinners($this);
 
         if (count($winners) === 1) {
-            // Single winner
+            // Single winner - game ends immediately
             $winnerId = $winners[0];
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
 
-            // Send win notification with confetti animation
+            $this->debug("🏆🏆🏆 stCheckWin: WINNER DETECTED - Player $winnerId 🏆🏆🏆");
+
+            // Send win notification
             $this->notifyAllPlayers(
                 'gameWon',
                 clienttranslate('${player} wins the game!'),
@@ -636,9 +637,15 @@ class Game extends \Bga\GameFramework\Table {
                 ]
             );
 
-            // Transition to playerTurn - the framework will detect the win and end the game
-            // We must transition to a valid state, can't just stay in checkWin
-            $this->cancelActionAndContinue();
+            $this->debug("🏆 stCheckWin: Setting winner score to 1 for player $winnerId");
+
+            // Set winner score to 1 to indicate they won
+            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
+
+            $this->debug("🏆 stCheckWin: Score set, transitioning to gameEnd");
+
+            // Transition to gameEnd state - framework will handle game termination
+            $this->gamestate->nextState('gameEnd');
             return;
         } else if (count($winners) > 1) {
             // Tie - need rolloff
