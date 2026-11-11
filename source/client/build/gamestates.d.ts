@@ -101,6 +101,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'type': 'game',
 		'action': 'stRolloff',
 		'transitions': {
+			'rolloff': 8,
 			'playerTurn': 2,
 		},
 	},

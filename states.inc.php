@@ -117,6 +117,7 @@ $machinestates = array(
 		'type' => 'game',
 		'action' => 'stRolloff',
 		'transitions' => array(
+			'rolloff' => 8,
 			'playerTurn' => 2,
 		),
 	),

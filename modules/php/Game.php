@@ -759,10 +759,20 @@ class Game extends \Bga\GameFramework\Table {
     public function stRolloff() {
         $winners = json_decode((string)$this->getGameStateValue('action_data'), true);
 
+        $this->debug("🎲 ROLLOFF: Starting rolloff for tied players: " . json_encode($winners));
+
+        // Reroll dice for all tied players
+        foreach ($winners as $playerId) {
+            DiceManager::rollDiceForPlayer($this, $playerId);
+            $this->debug("🎲 ROLLOFF: Rerolled dice for player $playerId");
+        }
+
+        // Count imps for each player after reroll
         $rolloffResults = [];
         foreach ($winners as $playerId) {
             $impCount = GameValidator::countImpsForPlayer($this, $playerId);
             $rolloffResults[$playerId] = $impCount;
+            $this->debug("🎲 ROLLOFF: Player $playerId has $impCount imps");
         }
 
         $maxImps = max($rolloffResults);
@@ -770,7 +780,10 @@ class Game extends \Bga\GameFramework\Table {
             return $imps === $maxImps;
         }));
 
+        $this->debug("🎲 ROLLOFF: Max imps: $maxImps, Players with max: " . json_encode($finalWinners));
+
         if (count($finalWinners) === 1) {
+            // Clear winner - one player has most imps
             $winnerId = $finalWinners[0];
             $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
             $this->notifyAllPlayers(
@@ -793,22 +806,24 @@ class Game extends \Bga\GameFramework\Table {
                 ]
             );
         } else {
-            // Still tied, pick first player arbitrarily
-            $winner = $finalWinners[0];
-            $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winner");
-
-            // Send win notification with confetti animation
+            // Still tied - reroll again
+            $this->debug("🎲 ROLLOFF: Still tied with $maxImps imps, rerolling again");
             $this->notifyAllPlayers(
-                'gameWon',
-                clienttranslate('${player} wins the game!'),
+                'message',
+                clienttranslate('Rolloff tied at ${imps} imps - rerolling'),
                 [
-                    'player' => $this->getPlayerNameById($winner),
-                    'winnerId' => strval($winner)
+                    'imps' => $maxImps
                 ]
             );
+
+            // Save the tied players for next rolloff
+            $this->setGameStateValue('action_data', (string)json_encode($finalWinners));
+
+            // Transition back to rolloff state to try again
+            $this->gamestate->nextState('rolloff');
         }
 
-        // Don't call nextState - framework will end the game automatically
+        // Don't call nextState if there's a winner - framework will end the game automatically
         // when it sees a player has won (player_score > 0)
     }
 
