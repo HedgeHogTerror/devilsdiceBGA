@@ -52,6 +52,8 @@ class ActionExecutor {
      * Execute Extort action
      */
     public static function executeExtort($game, $playerId, $targetId) {
+        $game->debug("💰💰💰 EXECUTING EXTORT: Player $playerId extorting from target $targetId");
+
         // Transfer 3 skull tokens from target to player
         $targetTokens = $game->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $targetId");
         $tokensToSteal = min(3, $targetTokens);
@@ -82,6 +84,8 @@ class ActionExecutor {
      * Execute Reap Soul action
      */
     public static function executeReapSoul($game, $playerId, $targetId) {
+        $game->debug("☠️☠️☠️ EXECUTING REAP SOUL: Player $playerId reaping from target $targetId");
+
         // Pay 2 skull tokens
         $game->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
 

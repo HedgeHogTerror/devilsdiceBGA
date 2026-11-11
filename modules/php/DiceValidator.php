@@ -26,10 +26,12 @@ class DiceValidator {
             case Actions::IMPS_SET:
                 return self::validateImpsSet($diceFaces);
             case Actions::BLOCK:
-                $currentAction = $game->getGameStateValue('current_action');
-                if ($currentAction == Actions::EXTORT) {
+                // When validating a block, check the blocked_action (the original action being blocked)
+                // not current_action (which is now BLOCK)
+                $blockedAction = $game->getGameStateValue('blocked_action');
+                if ($blockedAction == Actions::EXTORT) {
                     return in_array(DiceFaces::TRIDENT, $diceFaces);
-                } else if ($currentAction == Actions::REAP_SOUL) {
+                } else if ($blockedAction == Actions::REAP_SOUL) {
                     return in_array(DiceFaces::PENTAGRAM, $diceFaces);
                 }
                 return false;
