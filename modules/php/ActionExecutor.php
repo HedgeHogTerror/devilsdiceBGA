@@ -86,10 +86,8 @@ class ActionExecutor {
     public static function executeReapSoul($game, $playerId, $targetId) {
         $game->debug("☠️☠️☠️ EXECUTING REAP SOUL: Player $playerId reaping from target $targetId");
 
-        // Pay 2 skull tokens
-        $game->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
-
-        // Steal a die from target
+        // Note: 2 skull tokens were already paid when action was declared
+        // Just steal the die from target
         $game->stealDiceFromPlayer($playerId, $targetId);
 
         $game->notifyAllPlayers(

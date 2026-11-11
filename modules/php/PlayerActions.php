@@ -76,6 +76,22 @@ class PlayerActions {
             throw new \BgaUserException("You need 2 skull tokens to use Reap Soul");
         }
 
+        // Charge 2 skull tokens immediately when declaring the action
+        // Player pays the cost regardless of whether action is blocked/challenged
+        $game->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens - 2 WHERE player_id = $playerId");
+        $game->debug("💀 reapSoul: Charged player $playerId 2 skull tokens");
+
+        // Get updated token count and notify
+        $playerNewTokens = $game->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $playerId");
+        $game->notifyAllPlayers(
+            'tokensChanged',
+            '',
+            [
+                'playerId' => $playerId,
+                'tokens' => $playerNewTokens
+            ]
+        );
+
         $game->setGameStateValue('current_action', Actions::REAP_SOUL);
         $game->setGameStateValue('current_action_player', $playerId);
         $game->setGameStateValue('current_target_player', $targetPlayerId);

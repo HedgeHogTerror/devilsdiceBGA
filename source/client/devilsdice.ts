@@ -527,6 +527,7 @@ export default class DevilsDice extends (GameGui as any) {
                     'message',
                     'diceRerolled',
                     'diceCountUpdate',
+                    'tokensChanged',
                     'gameSetupComplete',
                     'challengeSuccessful',
                     'challengeFailed',
@@ -566,6 +567,17 @@ export default class DevilsDice extends (GameGui as any) {
 
         if (playerId && diceCount !== undefined) {
             this.playerDiceCounts[playerId] = diceCount;
+            this.updatePlayersInfo();
+        }
+    };
+
+    notification_tokensChanged = (notif: {args: NotificationArgs}): void => {
+        const playerId = notif.args.playerId;
+        const tokens = notif.args.tokens;
+
+        if (playerId && tokens !== undefined) {
+            console.log(`tokensChanged: Updating player ${playerId} to ${tokens} tokens`);
+            this.playerTokens[playerId] = tokens;
             this.updatePlayersInfo();
         }
     };

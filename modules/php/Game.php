@@ -443,6 +443,25 @@ class Game extends \Bga\GameFramework\Table {
 
             $this->stealDiceFromPlayer($challengerId, $actionPlayerId);
 
+            // Refund reap soul cost if the action was successfully challenged
+            if ($currentAction == Actions::REAP_SOUL && !$isBlockChallenge) {
+                // Player was lying about reap soul and lost the challenge
+                // Refund the 2 skull tokens they paid upfront
+                $this->DbQuery("UPDATE player_tokens SET skull_tokens = skull_tokens + 2 WHERE player_id = $actionPlayerId");
+                $this->debug("💀 stResolveChallenge: Refunded 2 skull tokens to player $actionPlayerId (reap soul challenge succeeded)");
+
+                // Notify clients of token update
+                $playerNewTokens = $this->getUniqueValueFromDB("SELECT skull_tokens FROM player_tokens WHERE player_id = $actionPlayerId");
+                $this->notifyAllPlayers(
+                    'tokensChanged',
+                    '',
+                    [
+                        'playerId' => $actionPlayerId,
+                        'tokens' => $playerNewTokens
+                    ]
+                );
+            }
+
             // Special handling for BLOCK challenges
             $blockedAction = intval($this->getGameStateValue('blocked_action'));
             $blockedActionPlayer = intval($this->getGameStateValue('blocked_action_player'));
