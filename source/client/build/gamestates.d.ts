@@ -103,6 +103,7 @@ interface DefinedGameStates extends ValidateGameStates<{
 		'transitions': {
 			'rolloff': 8,
 			'playerTurn': 2,
+			'gameEnd': 99,
 		},
 	},
 	9: {

@@ -805,6 +805,9 @@ class Game extends \Bga\GameFramework\Table {
                     'winnerId' => strval($winnerId)
                 ]
             );
+
+            // Transition to gameEnd state to properly end the game
+            $this->gamestate->nextState('gameEnd');
         } else {
             // Still tied - reroll again
             $this->debug("🎲 ROLLOFF: Still tied with $maxImps imps, rerolling again");
@@ -822,9 +825,6 @@ class Game extends \Bga\GameFramework\Table {
             // Transition back to rolloff state to try again
             $this->gamestate->nextState('rolloff');
         }
-
-        // Don't call nextState if there's a winner - framework will end the game automatically
-        // when it sees a player has won (player_score > 0)
     }
 
     /**

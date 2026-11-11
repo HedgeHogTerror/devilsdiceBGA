@@ -119,6 +119,7 @@ $machinestates = array(
 		'transitions' => array(
 			'rolloff' => 8,
 			'playerTurn' => 2,
+			'gameEnd' => 99,
 		),
 	),
 	9 => array(

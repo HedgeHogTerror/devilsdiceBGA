@@ -139,7 +139,8 @@
 		"action": "stRolloff",
 		"transitions": {
 			"rolloff": 8,
-			"playerTurn": 2
+			"playerTurn": 2,
+			"gameEnd": 99
 		}
 	},
 
