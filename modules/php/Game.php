@@ -70,7 +70,7 @@ class Game extends \Bga\GameFramework\Table {
      * @return array
      * @see ./states.inc.php
      */
-    private const STARTING_SKULL_TOKENS = 6;
+    private const STARTING_SKULL_TOKENS = 1;
     private const STARTING_DICE = 2;
 
 
