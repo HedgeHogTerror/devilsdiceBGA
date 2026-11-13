@@ -265,23 +265,32 @@ export default class DevilsDice extends (GameGui as any) {
         const currentPlayerId = this['player_id'];
         const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
 
+        // Icons for hover text (using emoji/unicode)
+        const skullIcon = '💀';  // Skull emoji for tokens
+        const dieIcon = '🎲';     // Die emoji
+
         const actions = [
-            {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell', enabled: true},
-            {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls', enabled: true},
-            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true},
-            {id: 'reapSoul', label: _('Reap Soul (Scythe) - 2 skulls'), handler: 'onReapSoul', enabled: currentPlayerTokens >= 2},
-            {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram', enabled: true},
-            {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet', enabled: true},
-            {id: 'satansSteal', label: _("Satan's Steal - 6 skulls"), handler: 'onSatansSteal', enabled: currentPlayerTokens >= 6},
+            {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell', enabled: true, hoverText: `Gain 1 ${skullIcon} & Reroll`},
+            {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls', enabled: true, hoverText: `Gain 2 ${skullIcon}`},
+            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true, hoverText: `Steal 2 ${skullIcon}`},
+            {id: 'reapSoul', label: _('Reap Soul (Scythe) - 2 skulls'), handler: 'onReapSoul', enabled: currentPlayerTokens >= 2, hoverText: `Pay 2 ${skullIcon} & Steal 1 ${dieIcon}`},
+            {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram', enabled: true, hoverText: `Reroll Satan Pool`},
+            {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet', enabled: true, hoverText: `Gain 1 ${dieIcon}`},
+            {id: 'satansSteal', label: _("Satan's Steal - 6 skulls"), handler: 'onSatansSteal', enabled: currentPlayerTokens >= 6, hoverText: `Pay 6 ${skullIcon} Steal 1 ${dieIcon}`},
         ];
 
         actions.forEach((action) => {
             const buttonId = `${action.id}_btn`;
             this['addActionButton'](buttonId, action.label, action.enabled ? action.handler : null);
 
+            // Add hover text attribute
+            const button = document.getElementById(buttonId);
+            if (button && action.hoverText) {
+                button.setAttribute('data-hover-text', action.hoverText);
+            }
+
             // Disable button if not enough tokens
             if (!action.enabled) {
-                const button = document.getElementById(buttonId);
                 if (button) {
                     button.classList.add('disabled');
                     button.style.opacity = '0.5';

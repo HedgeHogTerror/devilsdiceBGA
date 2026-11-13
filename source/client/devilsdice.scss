@@ -191,21 +191,75 @@
     padding: 8px 16px;
     border-radius: 6px;
     font-weight: bold;
+    position: relative;
+    transition: all 0.2s ease;
 
     &.bgabutton_blue {
         background: #4a90e2;
         border-color: #357abd;
+
+        &:hover {
+            background: #357abd;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(74, 144, 226, 0.3);
+        }
     }
 
     &.bgabutton_red {
         background: #e74c3c;
         border-color: #c0392b;
+
+        &:hover {
+            background: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+        }
     }
 
     &.bgabutton_gray {
         background: #95a5a6;
         border-color: #7f8c8d;
+
+        &:hover {
+            background: #7f8c8d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(149, 165, 166, 0.3);
+        }
     }
+
+    // Hover text swap using data attribute
+    &[data-hover-text] {
+        overflow: hidden;
+        position: relative;
+
+        &:hover {
+            // Hide original text
+            color: transparent;
+
+            // Show hover text
+            &::after {
+                content: attr(data-hover-text);
+                position: absolute;
+                left: 0;
+                right: 0;
+                top: 50%;
+                transform: translateY(-50%);
+                color: white;
+                font-weight: bold;
+                text-align: center;
+                font-size: 13px;
+                padding: 0 4px;
+                line-height: 1.2;
+                white-space: nowrap;
+            }
+        }
+    }
+}
+
+// Pentagram button needs smaller font for longer text
+#pentagram_btn[data-hover-text]:hover::after {
+    font-size: 10px !important;
+    white-space: normal !important;
 }
 
 /* State-based styling */
