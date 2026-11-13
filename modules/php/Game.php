@@ -523,7 +523,16 @@ class Game extends \Bga\GameFramework\Table {
             } else {
                 // Normal action challenge failed - continue with the action
                 if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
-                    $this->gamestate->nextState('blockWindow');
+                    // Check if the challenger is the target player
+                    $targetPlayerId = intval($this->getGameStateValue('current_target_player'));
+                    if ($challengerId === $targetPlayerId) {
+                        // Challenger is the target - they already challenged and lost, skip block window
+                        $this->debug("DevilsDice stResolveChallenge: Challenger $challengerId is the target, skipping block window");
+                        $this->gamestate->nextState('resolveAction');
+                    } else {
+                        // Different player challenged, allow block window for target
+                        $this->gamestate->nextState('blockWindow');
+                    }
                 } else {
                     $this->gamestate->nextState('resolveAction');
                 }
