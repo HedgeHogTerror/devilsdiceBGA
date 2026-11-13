@@ -272,7 +272,7 @@ export default class DevilsDice extends (GameGui as any) {
         const actions = [
             {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell', enabled: true, hoverText: `Gain 1 ${skullIcon} & Reroll`},
             {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls', enabled: true, hoverText: `Gain 2 ${skullIcon}`},
-            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true, hoverText: `Steal 2 ${skullIcon}`},
+            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true, hoverText: `Steal 3 ${skullIcon}`},
             {id: 'reapSoul', label: _('Reap Soul (Scythe) - 2 skulls'), handler: 'onReapSoul', enabled: currentPlayerTokens >= 2, hoverText: `Pay 2 ${skullIcon} & Steal 1 ${dieIcon}`},
             {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram', enabled: true, hoverText: `Reroll Satan Pool`},
             {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet', enabled: true, hoverText: `Gain 1 ${dieIcon}`},

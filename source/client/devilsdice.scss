@@ -203,6 +203,11 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(74, 144, 226, 0.3);
         }
+
+        // Blue button hover text background
+        &[data-hover-text]:hover::after {
+            background: rgba(74, 144, 226, 0.95);
+        }
     }
 
     &.bgabutton_red {
@@ -213,6 +218,11 @@
             background: #c0392b;
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+        }
+
+        // Red button hover text background
+        &[data-hover-text]:hover::after {
+            background: rgba(231, 76, 60, 0.95);
         }
     }
 
@@ -225,6 +235,11 @@
             transform: translateY(-2px);
             box-shadow: 0 4px 8px rgba(149, 165, 166, 0.3);
         }
+
+        // Gray button hover text background
+        &[data-hover-text]:hover::after {
+            background: rgba(149, 165, 166, 0.95);
+        }
     }
 
     // Hover text swap using data attribute
@@ -236,7 +251,7 @@
             // Hide original text
             color: transparent;
 
-            // Show hover text
+            // Show hover text with semi-transparent background matching button color
             &::after {
                 content: attr(data-hover-text);
                 position: absolute;
@@ -248,9 +263,10 @@
                 font-weight: bold;
                 text-align: center;
                 font-size: 13px;
-                padding: 0 4px;
+                padding: 4px;
                 line-height: 1.2;
                 white-space: nowrap;
+                border-radius: 4px;
             }
         }
     }
