@@ -516,7 +516,7 @@ class Game extends \Bga\GameFramework\Table {
             if ($isBlockChallenge) {
                 // Block was NOT successfully challenged - block stands, original action is cancelled
                 $this->debug("DevilsDice stResolveChallenge: Block challenge failed - block succeeds, cancelling original action");
-                $this->gamestate->nextState('checkWin');
+                $this->cancelActionAndContinue();
             } else {
                 // Normal action challenge failed - continue with the action
                 if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
