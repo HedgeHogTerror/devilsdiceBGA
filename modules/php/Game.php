@@ -673,7 +673,12 @@ class Game extends \Bga\GameFramework\Table {
             // Set winner score to 1 to indicate they won
             $this->DbQuery("UPDATE player SET player_score = 1 WHERE player_id = $winnerId");
 
-            $this->debug("🏆 stCheckWin: Score set, transitioning to gameEnd");
+            $this->debug("🏆 stCheckWin: Score set, waiting 5 seconds before ending game");
+
+            // Wait 5 seconds so players can see the final state
+            sleep(5);
+
+            $this->debug("🏆 stCheckWin: Transitioning to gameEnd");
 
             // Transition to gameEnd state - framework will handle game termination
             $this->gamestate->nextState('gameEnd');
@@ -817,6 +822,9 @@ class Game extends \Bga\GameFramework\Table {
                     'winnerId' => strval($winnerId)
                 ]
             );
+
+            // Wait 5 seconds so players can see the final state
+            sleep(5);
 
             // Transition to gameEnd state to properly end the game
             $this->gamestate->nextState('gameEnd');
