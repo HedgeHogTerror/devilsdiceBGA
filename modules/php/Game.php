@@ -499,7 +499,7 @@ class Game extends \Bga\GameFramework\Table {
                 }
             }
         } else {
-            // Challenge failed - blocker was telling the truth, original action is cancelled
+            // Challenge failed - action player was telling the truth, original action is cancelled
             $this->notifyAllPlayers(
                 'challengeFailed',
                 clienttranslate('${challenger}\'s challenge fails against ${player}'),
@@ -512,6 +512,9 @@ class Game extends \Bga\GameFramework\Table {
             );
 
             $this->moveDiceToSatansPool($challengerId);
+
+            // Reroll the action player's dice since they successfully defended their claim
+            DiceManager::rollDiceForPlayer($this, $actionPlayerId);
 
             if ($isBlockChallenge) {
                 // Block was NOT successfully challenged - block stands, original action is cancelled
