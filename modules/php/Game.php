@@ -283,7 +283,7 @@ class Game extends \Bga\GameFramework\Table {
                 // Check if player has any dice - players with 0 dice can't challenge
                 $diceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(*) FROM player_dice WHERE player_id = $playerIdInt AND location = 'hand'"));
                 if ($diceCount > 0) {
-                    $challengePlayers[] = strval($playerIdInt);
+                    $challengePlayers[] = $playerIdInt; // Use integer, not string
                     $this->debug("DevilsDice stChallengeWindow: Added player $playerIdInt to challenge list (has $diceCount dice)");
                 } else {
                     $this->debug("DevilsDice stChallengeWindow: Excluded player $playerIdInt - has 0 dice, auto-passing");
