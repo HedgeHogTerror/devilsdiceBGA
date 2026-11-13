@@ -765,6 +765,9 @@ export default class DevilsDice extends (GameGui as any) {
 
         // Show win message
         this.showMessage(_('Game Over!'), 'success');
+
+        // Set a 5 second delay before moving to end game screen
+        this['notifqueue'].setSynchronousDuration(5000);
     };
 
     ///////////////////////////////////////////////////
