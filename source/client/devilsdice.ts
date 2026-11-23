@@ -272,18 +272,18 @@ export default class DevilsDice extends (GameGui as any) {
         const currentStateName = gamedatas?.gamestate?.name;
         const canDeclareAction = isMyTurn && currentStateName === 'playerTurn';
 
-        // Icons for hover text (using emoji/unicode)
-        const skullIcon = '💀';  // Skull emoji for tokens
+        // Icons for action descriptions
+        const skullIcon = `<img src="${g_gamethemeurl}img/SkullToken1.png" alt="Skull" class="skull-token-icon" />`;
         const dieIcon = '🎲';     // Die emoji
 
         const actions = [
             {id: 'raiseHell', label: _('Raise Hell'), icon: 'flame_icon.svg', handler: 'onRaiseHell', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${skullIcon} & Reroll`},
             {id: 'harvestSkulls', label: _('Harvest Skulls'), icon: 'skull_icon.svg', handler: 'onHarvestSkulls', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 2 ${skullIcon}`},
             {id: 'extort', label: _('Extort'), icon: 'trident_icon.svg', handler: 'onExtort', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Steal 3 ${skullIcon}`},
-            {id: 'reapSoul', label: _('Reap Soul'), icon: 'scythe_icon.svg', handler: 'onReapSoul', enabled: canDeclareAction && currentPlayerTokens >= 2, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 2, cost: `2 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
+            {id: 'reapSoul', label: _('Reap Soul'), icon: 'scythe_icon.svg', handler: 'onReapSoul', enabled: canDeclareAction && currentPlayerTokens >= 2, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 2, cost: `Pay 2 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
             {id: 'pentagram', label: _('Pentagram'), icon: 'pentagram_icon.svg', handler: 'onPentagram', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Reroll Satan Pool`},
             {id: 'impsSet', label: _("Imp's Set"), icon: 'imp_icon.svg', handler: 'onImpsSet', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${dieIcon}`},
-            {id: 'satansSteal', label: _("Satan's Steal"), icon: 'trident_icon.svg', handler: 'onSatansSteal', enabled: canDeclareAction && currentPlayerTokens >= 6, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 6, cost: `6 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
+            {id: 'satansSteal', label: _("Satan's Steal"), icon: 'satanssteal.png', handler: 'onSatansSteal', enabled: canDeclareAction && currentPlayerTokens >= 6, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 6, cost: `Pay 6 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
         ];
 
         const actionIconsContainer = dom.byId('action-icons');
@@ -302,9 +302,8 @@ export default class DevilsDice extends (GameGui as any) {
             const insufficientTokensClass = insufficientTokens ? 'insufficient-tokens' : '';
             const lockIcon = insufficientTokens ? '<span class="lock-icon">🔒</span>' : '';
 
-            // Hide icon for Satan's Steal
-            const showIcon = action.id !== 'satansSteal';
-            const iconHTML = showIcon ? `<img src="${g_gamethemeurl}img/${action.icon}" alt="${action.label}" class="action-icon" />` : '';
+            // Show icon for all actions
+            const iconHTML = `<img src="${g_gamethemeurl}img/${action.icon}" alt="${action.label}" class="action-icon" />`;
 
             const buttonHTML = `
                 <button id="${buttonId}" class="action-icon-btn ${disabledClass} ${insufficientTokensClass}">
@@ -860,7 +859,7 @@ export default class DevilsDice extends (GameGui as any) {
                          style="color: #${player.color}" data-player="${player.id}">
                         <div class="playerhead">
                             <div id="balloon_${player.id}" class="balloon"></div>
-                            <div id="wealth_${player.id}" class="wealth">💀 <span class="token-count">0</span></div>
+                            <div id="wealth_${player.id}" class="wealth"><img src="${g_gamethemeurl}img/SkullToken1.png" alt="Skull" class="skull-token-icon" /> <span class="token-count">0</span></div>
                             <div class="player-name">${player.name}</div>
                         </div>
                         <div id="dice_${player.id}" class="dice"></div>

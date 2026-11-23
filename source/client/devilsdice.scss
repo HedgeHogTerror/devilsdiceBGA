@@ -376,7 +376,7 @@
 
     .action-cost {
         font-size: 10px;
-        color: #e74c3c;
+        color: #ffffff;
         font-weight: bold;
         line-height: 1;
     }
@@ -805,8 +805,12 @@
 }
 
 .skull-token-icon {
-    width: 16px; /* Adjust size as needed */
+    width: 16px;
     height: 16px;
     vertical-align: middle;
     margin-right: 4px;
+    background: #000000;
+    border-radius: 50%;
+    padding: 2px;
+    box-sizing: content-box;
 }
