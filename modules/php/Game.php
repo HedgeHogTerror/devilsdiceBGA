@@ -494,8 +494,10 @@ class Game extends \Bga\GameFramework\Table {
                     // Block was challenged, blocker failed - continue with original action
                     $this->gamestate->nextState('resolveAction');
                 } else {
-                    // Normal challenge or action is now cancelled
-                    $this->cancelActionAndContinue();
+                    // Normal challenge or action is now cancelled.
+                    // Go through checkWin: dice were stolen/rerolled, which may have produced a winner.
+                    // (stCheckWin calls cancelActionAndContinue when there is no winner.)
+                    $this->gamestate->nextState('checkWin');
                 }
             }
         } else {
@@ -519,7 +521,8 @@ class Game extends \Bga\GameFramework\Table {
             if ($isBlockChallenge) {
                 // Block was NOT successfully challenged - block stands, original action is cancelled
                 $this->debug("DevilsDice stResolveChallenge: Block challenge failed - block succeeds, cancelling original action");
-                $this->cancelActionAndContinue();
+                // Go through checkWin: dice moved/rerolled, which may have produced a winner
+                $this->gamestate->nextState('checkWin');
             } else {
                 // Normal action challenge failed - continue with the action
                 if (in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
@@ -862,7 +865,7 @@ class Game extends \Bga\GameFramework\Table {
     /**
      * Add or remove dice from a player and send notification
      */
-    public function addOrRemoveDice($playerId, $count) {
+    public function addOrRemoveDice($playerId, $count, $notify = true) {
         $this->debug("🎯🎯🎯 addOrRemoveDice: ENTERED for player $playerId, count $count 🎯🎯🎯");
 
         $current = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
@@ -908,6 +911,11 @@ class Game extends \Bga\GameFramework\Table {
         $this->debug("🎯 addOrRemoveDice: Player $playerId now has $newCount dice (was $current, changed by $count)");
 
         // Send notification
+        if (!$notify) {
+            // Caller will notify clients itself (e.g. to control notification order)
+            return;
+        }
+
         $this->debug("🎯 addOrRemoveDice: About to call DiceManager::rollDiceForPlayer");
         DiceManager::rollDiceForPlayer($this, $playerId);
         $this->debug("🎯 addOrRemoveDice: DiceManager::rollDiceForPlayer completed - FUNCTION COMPLETE");
@@ -970,6 +978,8 @@ class Game extends \Bga\GameFramework\Table {
         }
         $this->addOrRemoveDice($playerId, -1); // Remove one die from player
 
+        $newDiceCount = intval($this->getUniqueValueFromDB("SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'"));
+
         $this->notifyAllPlayers(
             'diceToSatansPool',
             clienttranslate('A die from ${player} is rolled into Satan\'s pool'),
@@ -977,6 +987,7 @@ class Game extends \Bga\GameFramework\Table {
                 'player' => $this->getPlayerNameById($playerId),
                 'playerId' => $playerId,
                 'face' => $finalFace,
+                'diceCount' => $newDiceCount,
             ]
         );
     }
@@ -1024,18 +1035,8 @@ class Game extends \Bga\GameFramework\Table {
                         $this->setGameStateValue('dice_overflow_player', 0);
                         $this->setGameStateValue('dice_overflow_count', 0);
 
-                        // Check if from challenge or normal action
-                        $actionDataJson = $this->getGameStateValue('action_data');
-                        $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
-                        $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
-
-                        if ($overflowFromChallenge) {
-                            $this->setGameStateValue('action_data', '');
-                            $this->activeNextPlayer();
-                            $this->gamestate->nextState("playerTurn");
-                        } else {
-                            $this->gamestate->nextState("checkWin");
-                        }
+                        // Always check for a winner; stCheckWin advances the turn if there is none
+                        $this->gamestate->nextState("checkWin");
                     }
                     break;
 
@@ -1069,18 +1070,9 @@ class Game extends \Bga\GameFramework\Table {
                     $this->setGameStateValue('dice_overflow_player', 0);
                     $this->setGameStateValue('dice_overflow_count', 0);
 
-                    // Check if from challenge or normal action
-                    $actionDataJson = $this->getGameStateValue('action_data');
-                    $actionData = $actionDataJson ? json_decode((string)$actionDataJson, true) : [];
-                    $overflowFromChallenge = isset($actionData['overflow_from_challenge']) && $actionData['overflow_from_challenge'];
-
-                    $nextState = $overflowFromChallenge ? 'playerTurn' : 'checkWin';
-                    if ($overflowFromChallenge) {
-                        $this->setGameStateValue('action_data', '');
-                        $this->activeNextPlayer();
-                    }
-
-                    $this->gamestate->setPlayerNonMultiactive($activePlayer, $nextState);
+                    // Always check for a winner (matches chooseDiceOverflowFace);
+                    // stCheckWin advances the turn if there is none
+                    $this->gamestate->setPlayerNonMultiactive($activePlayer, 'checkWin');
                     break;
 
                 default:

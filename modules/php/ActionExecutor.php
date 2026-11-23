@@ -129,45 +129,46 @@ class ActionExecutor {
             }
         }
 
+        // Pool as rolled (including any pentagram about to leave it) - client animates the reroll to this
+        $rolledSatansPool = $game->getCollectionFromDb("SELECT dice_id, face FROM satans_pool");
+
         // Remove pentagram dice from Satan's pool (player gains up to 1)
+        $gainedDiceId = null;
+        $playerGainedDie = false;
         if ($pentagramsRolled > 0) {
             // Remove the first pentagram die from Satan's pool
-            $diceIdToRemove = $pentagramDiceIds[0];
-            $game->DbQuery("DELETE FROM satans_pool WHERE dice_id = $diceIdToRemove");
+            $gainedDiceId = $pentagramDiceIds[0];
+            $game->DbQuery("DELETE FROM satans_pool WHERE dice_id = $gainedDiceId");
 
-            // Add 1 die to player with pentagram face (check for overflow)
-            $game->addOrRemoveDice($playerId, 1);
-
-            // Set the new die to pentagram
-            $game->DbQuery("UPDATE player_dice SET face = '" . \Bga\Games\DevilsDice\DiceFaces::PENTAGRAM . "' WHERE player_id = $playerId AND location = 'hand' ORDER BY dice_id DESC LIMIT 1");
+            // Add 1 die to player - addOrRemoveDice rerolls the whole hand, gained die included
+            // (or stores a pending overflow instead if they have 6).
+            // Don't notify yet: the hand update must arrive after the pentagram notification
+            // so the client plays it after the pool -> hand transfer animation.
+            $countSql = "SELECT COUNT(dice_id) FROM player_dice WHERE player_id = $playerId AND location = 'hand'";
+            $countBefore = intval($game->getUniqueValueFromDB($countSql));
+            $game->addOrRemoveDice($playerId, 1, false);
+            $playerGainedDie = intval($game->getUniqueValueFromDB($countSql)) > $countBefore;
         }
 
         // Get the updated Satan's pool data for the notification (after removing pentagram)
         $updatedSatansPool = $game->getCollectionFromDb("SELECT dice_id, face FROM satans_pool");
 
-        // Send notification
-        if ($pentagramsRolled > 0) {
-            $game->notifyAllPlayers(
-                'pentagram',
-                clienttranslate('${player} rerolls Satan\'s pool and gains one pentagram dice'),
-                [
-                    'player' => $game->getPlayerNameById($playerId),
-                    'playerId' => $playerId,
-                    'pentagrams' => 1,
-                    'satansPool' => $updatedSatansPool
-                ]
-            );
-        } else {
-            $game->notifyAllPlayers(
-                'pentagram',
-                clienttranslate('${player} rerolls Satan\'s pool and did not roll any pentagrams'),
-                [
-                    'player' => $game->getPlayerNameById($playerId),
-                    'playerId' => $playerId,
-                    'pentagrams' => 0,
-                    'satansPool' => $updatedSatansPool
-                ]
-            );
+        $message = $pentagramsRolled > 0
+            ? clienttranslate('${player} rerolls Satan\'s pool and gains one pentagram dice')
+            : clienttranslate('${player} rerolls Satan\'s pool and did not roll any pentagrams');
+
+        $game->notifyAllPlayers('pentagram', $message, [
+            'player' => $game->getPlayerNameById($playerId),
+            'playerId' => $playerId,
+            'pentagrams' => $pentagramsRolled > 0 ? 1 : 0,
+            'rolledSatansPool' => $rolledSatansPool,
+            'satansPool' => $updatedSatansPool,
+            'gainedDiceId' => $gainedDiceId,
+        ]);
+
+        // Now send the player's rerolled hand - the client plays this after the transfer
+        if ($playerGainedDie) {
+            DiceManager::notifyPlayerDice($game, $playerId);
         }
     }
 

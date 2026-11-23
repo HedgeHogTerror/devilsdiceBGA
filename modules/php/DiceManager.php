@@ -36,16 +36,19 @@ class DiceManager {
             }
         }
 
-        // Get the new dice data and send notification
+        self::notifyPlayerDice($game, $playerId);
+    }
+
+    /**
+     * Send a player's current dice (and count) to clients without rerolling
+     */
+    public static function notifyPlayerDice($game, $playerId) {
         $playerDice = self::getPlayerDice($game, $playerId);
-        // Get the actual current count after reroll (not the cached $currentCount from before)
-        $actualCount = count($playerDice);
-        $game->debug("DevilsDice rollDiceForPlayer: Player $playerId rerolled to $actualCount dice (was $currentCount before reroll)");
 
         $game->notifyAllPlayers('diceRerolled', '', [
             'playerId' => $playerId,
             'dice' => $playerDice,
-            'diceCount' => $actualCount
+            'diceCount' => count($playerDice)
         ]);
     }
 }

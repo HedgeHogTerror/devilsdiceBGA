@@ -73,6 +73,7 @@ $machinestates = array(
 			'playerTurn' => 2,
 			'blockWindow' => 6,
 			'resolveAction' => 5,
+			'checkWin' => 7,
 			'chooseDiceOverflowFace' => 9,
 		),
 	),

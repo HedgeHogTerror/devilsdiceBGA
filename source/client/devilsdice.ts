@@ -32,6 +32,8 @@ interface NotificationArgs {
     pentagrams?: number;
     imps?: number;
     satansPool?: Record<string, string>;
+    rolledSatansPool?: Record<string, string>;
+    gainedDiceId?: number | string | null;
     winnerId?: string;
 }
 
@@ -725,11 +727,10 @@ export default class DevilsDice extends (GameGui as any) {
 
             // Store transfer animation promise
             this.pendingTransferAnimation = this.animator.animateToSatansPool(`dice-${playerId}`, 1).then(() => {
-                // Only update Satan's pool if this notification includes the full pool state
-                // Otherwise, a subsequent notification (like pentagram) will update it
+                // Update Satan's pool data
                 if (satansPool) {
-                    console.log('Full Satan\'s pool state provided in diceToSatansPool, updating now');
-                    // Convert Satan's pool data
+                    console.log('Full Satan\'s pool state provided in diceToSatansPool, using it');
+                    // Convert Satan's pool data from full state
                     const convertedSatansPool: Record<string, string> = {};
                     for (const [key, entry] of Object.entries(satansPool)) {
                         if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
@@ -741,25 +742,24 @@ export default class DevilsDice extends (GameGui as any) {
                     }
                     this.satansPool = convertedSatansPool;
                 } else {
-                    console.log('No full pool state - will be updated by subsequent notification');
+                    console.log('No full pool state - adding single die to pool');
+                    // Add just the new die to the existing pool
+                    const newDiceId = `pool_${Date.now()}_${Math.random()}`;
+                    this.satansPool[newDiceId] = face;
                 }
 
                 // After transfer, animate reroll of remaining dice if current player
                 if (String(playerId) === String(this['player_id']) && dice) {
                     this.animator.animateDiceReroll(`dice_${this['player_id']}`, dice).then(() => {
-                        // Only update Satan's pool visual if we have the complete state
-                        if (satansPool) {
-                            this.updateSatansPool();
-                        }
+                        // Always update Satan's pool visual after animation
+                        this.updateSatansPool();
                         this.updatePlayersInfo();
                         this.updateAllPlayerDice();
                         this.pendingTransferAnimation = null;
                     });
                 } else {
                     // For opponents, just update displays after transfer animation
-                    if (satansPool) {
-                        this.updateSatansPool();
-                    }
+                    this.updateSatansPool();
                     this.updatePlayersInfo();
                     this.updateAllPlayerDice();
                     this.pendingTransferAnimation = null;
@@ -817,11 +817,18 @@ export default class DevilsDice extends (GameGui as any) {
 
         // If this is the current player, update their dice display with animation
         // Convert both to strings for comparison to handle type mismatches
-        if (String(playerId) === String(this['player_id']) && dice && Object.keys(dice).length > 0) {
+        if (String(playerId) === String(this['player_id'])) {
             this.myDice = dice;
 
             // Wait for any pending transfer animation before starting reroll
             const startReroll = () => {
+                if (Object.keys(dice).length === 0) {
+                    // No dice left - nothing to animate, just clear the mat
+                    this.updatePlayersInfo();
+                    this.updateAllPlayerDice();
+                    return;
+                }
+
                 this.animator.animateDiceReroll(`dice_${this['player_id']}`, dice).then(() => {
                     console.log('My dice updated successfully from diceRerolled with animation');
                     // Update displays after animation completes
@@ -934,24 +941,51 @@ export default class DevilsDice extends (GameGui as any) {
         console.log('Pentagram action', notif);
         console.log('Pentagram notification args:', notif.args);
 
-        // Note: Player dice updates are handled by separate diceRerolled notification
-        // We only handle Satan's pool reroll here
+        // Sequence: reroll Satan's pool -> rolled pentagram flies to the player's hand.
+        // The player's hand update arrives as a separate diceRerolled notification,
+        // which waits on pendingTransferAnimation so it plays after the transfer.
+        const playerId = notif.args.playerId;
+        const gainedDiceId = notif.args.gainedDiceId;
+        const rolledPool = notif.args.rolledSatansPool || notif.args.satansPool;
+        const finalPool = notif.args.satansPool;
 
-        // Wait for any pending transfer animation before updating Satan's pool
-        const updatePool = () => {
-            if (notif.args.satansPool) {
-                this['animateSatansPoolReroll'](notif.args.satansPool);
-            } else {
+        const run = (): Promise<void> => {
+            if (!rolledPool) {
                 this.updateDisplay();
+                return Promise.resolve();
             }
+
+            return this.animateSatansPoolReroll(rolledPool).then(() => {
+                const showFinalPool = () => {
+                    if (finalPool) {
+                        this.satansPool = this.convertSatansPool(finalPool);
+                    }
+                    this.updateSatansPool();
+                };
+
+                if (gainedDiceId === null || gainedDiceId === undefined || !playerId) {
+                    showFinalPool();
+                    return;
+                }
+
+                // Lift the pentagram die out of the pool and fly it to the player's hand
+                const sourceId = `pool-die-${gainedDiceId}`;
+                const transfer = this.animator.animateFromSatansPool(`dice-${playerId}`, 1, sourceId, DICE_FACES.PENTAGRAM);
+                const sourceEl = document.getElementById(sourceId);
+                if (sourceEl) {
+                    sourceEl.style.visibility = 'hidden';
+                }
+                return transfer.then(showFinalPool);
+            });
         };
 
-        if (this.pendingTransferAnimation) {
-            console.log('Waiting for pending transfer animation before pentagram pool update...');
-            this.pendingTransferAnimation.then(updatePool);
-        } else {
-            updatePool();
-        }
+        const previous = this.pendingTransferAnimation;
+        const chain: Promise<void> = (previous ? previous.then(run) : run()).then(() => {
+            if (this.pendingTransferAnimation === chain) {
+                this.pendingTransferAnimation = null;
+            }
+        });
+        this.pendingTransferAnimation = chain;
     };
 
     notification_impsSet = (notif: {args: NotificationArgs}): void => {
@@ -1343,34 +1377,32 @@ export default class DevilsDice extends (GameGui as any) {
         satansPoolArea.innerHTML = html;
     }
 
-    private animateSatansPoolReroll(newSatansPool: Record<string, string>): void {
+    /**
+     * Convert Satan's pool data from backend format ({dice_id, face} rows or {id: face}) to {id: face}
+     */
+    private convertSatansPool(pool: Record<string, unknown>): Record<string, string> {
+        const converted: Record<string, string> = {};
+        for (const [key, entry] of Object.entries(pool || {})) {
+            if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
+                const diceEntry = entry as {dice_id: string; face: string};
+                converted[diceEntry.dice_id] = diceEntry.face;
+            } else if (typeof entry === 'string') {
+                converted[key] = entry;
+            }
+        }
+        return converted;
+    }
+
+    private animateSatansPoolReroll(newSatansPool: Record<string, string>): Promise<void> {
         console.log("Animating Satan's pool reroll with new data:", newSatansPool);
 
         const satansPoolArea = this.uiElements.satansPool;
         if (!satansPoolArea) {
             console.error("Satan's pool area not found");
-            return;
+            return Promise.resolve();
         }
 
-        // Convert Satan's pool data from backend format to frontend format
-        const convertedSatansPool: Record<string, string> = {};
-        if (newSatansPool) {
-            console.log("Raw Satan's pool data from notification:", newSatansPool);
-
-            // Handle both formats: direct key-value pairs or array of objects
-            for (const [key, entry] of Object.entries(newSatansPool)) {
-                if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
-                    // Format: {dice_id: "1", face: "imp"}
-                    const diceEntry = entry as {dice_id: string; face: string};
-                    convertedSatansPool[diceEntry.dice_id] = diceEntry.face;
-                    console.log(`Converted Satan's pool die ${diceEntry.dice_id}: ${diceEntry.face}`);
-                } else if (typeof entry === 'string') {
-                    // Format: {"1": "imp"}
-                    convertedSatansPool[key] = entry;
-                    console.log(`Direct Satan's pool die ${key}: ${entry}`);
-                }
-            }
-        }
+        const convertedSatansPool = this.convertSatansPool(newSatansPool);
 
         // Update our internal data
         this.satansPool = convertedSatansPool;
@@ -1378,66 +1410,69 @@ export default class DevilsDice extends (GameGui as any) {
         // If there are no dice in Satan's pool, just update normally
         if (Object.keys(convertedSatansPool).length === 0) {
             this.updateSatansPool();
-            return;
+            return Promise.resolve();
         }
 
-        const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
-        const diceElements: Record<string, HTMLElement> = {};
+        return new Promise<void>((resolve) => {
+            const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
+            const diceElements: Record<string, HTMLElement> = {};
 
-        // Create initial dice elements for animation
-        let html = '';
-        for (const diceId in convertedSatansPool) {
-            html += `<div class="die pool-die rolling" data-face="flame" data-dice-id="${diceId}">
-                ${this.getDiceSymbol('flame')}
-            </div>`;
-        }
-        satansPoolArea.innerHTML = html;
-
-        // Cache dice elements
-        const diceNodes = satansPoolArea.querySelectorAll('.die');
-        const diceIds = Object.keys(convertedSatansPool);
-        diceNodes.forEach((element, index) => {
-            if (index < diceIds.length && diceIds[index]) {
-                diceElements[diceIds[index]] = element as HTMLElement;
+            // Create initial dice elements for animation
+            let html = '';
+            for (const diceId in convertedSatansPool) {
+                html += `<div class="die pool-die rolling" id="pool-die-${diceId}" data-face="flame" data-dice-id="${diceId}">
+                    ${this.getDiceSymbol('flame')}
+                </div>`;
             }
-        });
+            satansPoolArea.innerHTML = html;
 
-        // Animate through all faces
-        let currentFaceIndex = 0;
-        const animationInterval = setInterval(() => {
-            const currentFace = faces[currentFaceIndex];
-            if (!currentFace) return;
-
-            // Update all dice to show current face
-            for (const diceId in diceElements) {
-                const element = diceElements[diceId];
-                if (element) {
-                    element.setAttribute('data-face', currentFace);
-                    element.innerHTML = this.getDiceSymbol(currentFace);
+            // Cache dice elements
+            const diceNodes = satansPoolArea.querySelectorAll('.die');
+            const diceIds = Object.keys(convertedSatansPool);
+            diceNodes.forEach((element, index) => {
+                if (index < diceIds.length && diceIds[index]) {
+                    diceElements[diceIds[index]] = element as HTMLElement;
                 }
-            }
+            });
 
-            currentFaceIndex++;
+            // Animate through all faces
+            let currentFaceIndex = 0;
+            const animationInterval = setInterval(() => {
+                const currentFace = faces[currentFaceIndex];
+                if (!currentFace) return;
 
-            // After cycling through all faces, show final results
-            if (currentFaceIndex >= faces.length) {
-                clearInterval(animationInterval);
-
-                // Show final faces after a brief delay
-                setTimeout(() => {
-                    for (const diceId in diceElements) {
-                        const element = diceElements[diceId];
-                        const finalFace = convertedSatansPool[diceId];
-
-                        if (element && finalFace) {
-                            element.setAttribute('data-face', finalFace);
-                            element.innerHTML = this.getDiceSymbol(finalFace);
-                            element.classList.remove('rolling');
-                        }
+                // Update all dice to show current face
+                for (const diceId in diceElements) {
+                    const element = diceElements[diceId];
+                    if (element) {
+                        element.setAttribute('data-face', currentFace);
+                        element.innerHTML = this.getDiceSymbol(currentFace);
                     }
-                }, 100);
-            }
-        }, 100); // 100ms between each face
+                }
+
+                currentFaceIndex++;
+
+                // After cycling through all faces, show final results
+                if (currentFaceIndex >= faces.length) {
+                    clearInterval(animationInterval);
+
+                    // Show final faces after a brief delay
+                    setTimeout(() => {
+                        for (const diceId in diceElements) {
+                            const element = diceElements[diceId];
+                            const finalFace = convertedSatansPool[diceId];
+
+                            if (element && finalFace) {
+                                element.setAttribute('data-face', finalFace);
+                                element.innerHTML = this.getDiceSymbol(finalFace);
+                                element.classList.remove('rolling');
+                            }
+                        }
+                        resolve();
+                    }, 100);
+                }
+            }, 100); // 100ms between each face
+        });
     }
 
     ///////////////////////////////////////////////////

@@ -15,6 +15,7 @@ export interface TransferConfig {
     source: string;        // Element ID or location identifier
     target: string;        // Element ID or location identifier
     count: number;
+    face?: string | undefined; // For dice: face to show on the moving die (default: blank)
     delay?: number;        // Stagger delay for multiple objects (default: 100ms)
     duration?: number;     // Animation duration per object (default: 600ms)
     callback?: () => void; // Called after all animations complete
@@ -99,7 +100,7 @@ export class GameObjectAnimator {
             const targetRect = targetElement.getBoundingClientRect();
 
             // Create animated object
-            const animatedObject = this.createAnimatedObject(config.type);
+            const animatedObject = this.createAnimatedObject(config.type, config.face);
 
             // Position at source
             animatedObject.style.position = 'fixed';
@@ -139,7 +140,7 @@ export class GameObjectAnimator {
     /**
      * Create the animated DOM element (token or die)
      */
-    private createAnimatedObject(type: 'token' | 'die'): HTMLElement {
+    private createAnimatedObject(type: 'token' | 'die', face?: string): HTMLElement {
         const element = document.createElement('div');
         element.className = `animated-${type}`;
 
@@ -167,7 +168,9 @@ export class GameObjectAnimator {
             element.style.justifyContent = 'center';
             element.style.fontSize = '20px';
             element.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.5)';
-            element.textContent = '🎲';
+            if (face) {
+                element.innerHTML = this.getDiceSymbol(face);
+            }
         }
 
         return element;
@@ -278,12 +281,13 @@ export class GameObjectAnimator {
     /**
      * Helper: Animate dice from Satan's Pool to player
      */
-    async animateFromSatansPool(target: string, count: number): Promise<void> {
+    async animateFromSatansPool(target: string, count: number, source: string = 'satans-pool', face?: string): Promise<void> {
         return this.animateTransfer({
             type: 'die',
-            source: 'satans-pool',
+            source,
             target,
             count,
+            face,
             duration: 1000
         });
     }
