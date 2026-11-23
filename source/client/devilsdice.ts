@@ -3,6 +3,7 @@
 import 'ebg/counter';
 import * as GameGui from 'ebg/core/gamegui';
 import * as dom from 'dojo/dom';
+import {GameObjectAnimator} from './animator';
 
 // Type definitions for better type safety
 interface GameData extends BGA.Gamedatas {
@@ -73,6 +74,10 @@ export default class DevilsDice extends (GameGui as any) {
     private satansPool: Record<string, string> = {};
     private targetSelectionCallback: ((playerId: string) => void) | null = null;
 
+    // Animation system
+    private animator!: GameObjectAnimator;
+    private pendingTransferAnimation: Promise<void> | null = null;
+
     // UI elements cache
     private uiElements: {
         myDice?: HTMLElement | null;
@@ -85,6 +90,9 @@ export default class DevilsDice extends (GameGui as any) {
 
     setup(gamedatas: GameData): void {
         console.log('Starting game setup', gamedatas);
+
+        // Initialize animator
+        this.animator = new GameObjectAnimator(g_gamethemeurl);
 
         // Store game data with proper typing and convert format
         this.playerTokens = {};
@@ -265,6 +273,7 @@ export default class DevilsDice extends (GameGui as any) {
     private createActionPanel(): void {
         const currentPlayerId = this['player_id'];
         const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
+        const currentPlayerDiceCount = this.playerDiceCounts[currentPlayerId] || 0;
         const isMyTurn = this['isCurrentPlayerActive']();
 
         // Check if we're in the playerTurn state (state 2) where actions can be declared
@@ -272,18 +281,21 @@ export default class DevilsDice extends (GameGui as any) {
         const currentStateName = gamedatas?.gamestate?.name;
         const canDeclareAction = isMyTurn && currentStateName === 'playerTurn';
 
+        // Players with 0 dice can only use Imp's Set or Satan's Steal
+        const hasDice = currentPlayerDiceCount > 0;
+
         // Icons for action descriptions
         const skullIcon = `<img src="${g_gamethemeurl}img/SkullToken1.png" alt="Skull" class="skull-token-icon" />`;
         const dieIcon = '🎲';     // Die emoji
 
         const actions = [
-            {id: 'raiseHell', label: _('Raise Hell'), icon: 'flame_icon.svg', handler: 'onRaiseHell', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${skullIcon} & Reroll`},
-            {id: 'harvestSkulls', label: _('Harvest Skulls'), icon: 'skull_icon.svg', handler: 'onHarvestSkulls', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 2 ${skullIcon}`},
-            {id: 'extort', label: _('Extort'), icon: 'trident_icon.svg', handler: 'onExtort', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Steal 3 ${skullIcon}`},
-            {id: 'reapSoul', label: _('Reap Soul'), icon: 'scythe_icon.svg', handler: 'onReapSoul', enabled: canDeclareAction && currentPlayerTokens >= 2, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 2, cost: `Pay 2 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
-            {id: 'pentagram', label: _('Pentagram'), icon: 'pentagram_icon.svg', handler: 'onPentagram', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Reroll Satan Pool`},
-            {id: 'impsSet', label: _("Imp's Set"), icon: 'imp_icon.svg', handler: 'onImpsSet', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${dieIcon}`},
-            {id: 'satansSteal', label: _("Satan's Steal"), icon: 'satanssteal.png', handler: 'onSatansSteal', enabled: canDeclareAction && currentPlayerTokens >= 6, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 6, cost: `Pay 6 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
+            {id: 'raiseHell', label: _('Raise Hell'), icon: 'flame_icon.svg', handler: 'onRaiseHell', enabled: canDeclareAction && hasDice, requiresCost: false, requiresDice: true, cost: '', description: `Gain 1 ${skullIcon} & Reroll`},
+            {id: 'harvestSkulls', label: _('Harvest Skulls'), icon: 'skull_icon.svg', handler: 'onHarvestSkulls', enabled: canDeclareAction && hasDice, requiresCost: false, requiresDice: true, cost: '', description: `Gain 2 ${skullIcon}`},
+            {id: 'extort', label: _('Extort'), icon: 'trident_icon.svg', handler: 'onExtort', enabled: canDeclareAction && hasDice, requiresCost: false, requiresDice: true, cost: '', description: `Steal 3 ${skullIcon}`},
+            {id: 'reapSoul', label: _('Reap Soul'), icon: 'scythe_icon.svg', handler: 'onReapSoul', enabled: canDeclareAction && hasDice && currentPlayerTokens >= 2, requiresCost: true, requiresDice: true, hasEnoughTokens: currentPlayerTokens >= 2, cost: `Pay 2 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
+            {id: 'pentagram', label: _('Pentagram'), icon: 'pentagram_icon.svg', handler: 'onPentagram', enabled: canDeclareAction && hasDice, requiresCost: false, requiresDice: true, cost: '', description: `Reroll Satan Pool`},
+            {id: 'impsSet', label: _("Imp's Set"), icon: 'imp_icon.svg', handler: 'onImpsSet', enabled: canDeclareAction, requiresCost: false, requiresDice: false, cost: '', description: `Gain 1 ${dieIcon}`},
+            {id: 'satansSteal', label: _("Satan's Steal"), icon: 'satanssteal.png', handler: 'onSatansSteal', enabled: canDeclareAction && currentPlayerTokens >= 6, requiresCost: true, requiresDice: false, hasEnoughTokens: currentPlayerTokens >= 6, cost: `Pay 6 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
         ];
 
         const actionIconsContainer = dom.byId('action-icons');
@@ -296,17 +308,21 @@ export default class DevilsDice extends (GameGui as any) {
             const buttonId = `${action.id}_icon_btn`;
 
             // Determine disabled state and lock icon
-            // Show lock icon and grayed out ONLY for cost-based actions where player doesn't have enough tokens
+            // Show lock icon and grayed out for:
+            // 1. Cost-based actions where player doesn't have enough tokens
+            // 2. Dice-requiring actions where player has no dice
             const insufficientTokens = action.requiresCost && !action.hasEnoughTokens;
+            const noDice = action.requiresDice && !hasDice;
+            const isLocked = insufficientTokens || noDice;
             const disabledClass = action.enabled ? '' : 'disabled';
-            const insufficientTokensClass = insufficientTokens ? 'insufficient-tokens' : '';
-            const lockIcon = insufficientTokens ? '<span class="lock-icon">🔒</span>' : '';
+            const lockedClass = isLocked ? 'insufficient-tokens' : '';
+            const lockIcon = isLocked ? '<span class="lock-icon">🔒</span>' : '';
 
             // Show icon for all actions
             const iconHTML = `<img src="${g_gamethemeurl}img/${action.icon}" alt="${action.label}" class="action-icon" />`;
 
             const buttonHTML = `
-                <button id="${buttonId}" class="action-icon-btn ${disabledClass} ${insufficientTokensClass}">
+                <button id="${buttonId}" class="action-icon-btn ${disabledClass} ${lockedClass}">
                     ${lockIcon}
                     ${iconHTML}
                     <div class="action-content">
@@ -339,6 +355,20 @@ export default class DevilsDice extends (GameGui as any) {
         console.log('🚨 Current player:', this['player_id']);
         console.log('🚨 Stack trace:', new Error().stack);
 
+        const currentPlayerId = this['player_id'];
+        const currentPlayerDiceCount = this.playerDiceCounts[currentPlayerId] || 0;
+
+        // If player has 0 dice, automatically pass
+        if (currentPlayerDiceCount === 0) {
+            console.log('🚨 Player has 0 dice, auto-passing challenge');
+            this.showMessage(_('You have no dice - automatically passing'), 'info');
+            // Auto-pass after a short delay so player can see the message
+            setTimeout(() => {
+                this.onPass();
+            }, 1000);
+            return;
+        }
+
         this['addActionButton']('challenge_btn', _('Challenge'), 'onChallenge');
         this['addActionButton']('pass_btn', _('Pass'), 'onPass');
 
@@ -346,6 +376,20 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     private addBlockButtons(): void {
+        const currentPlayerId = this['player_id'];
+        const currentPlayerDiceCount = this.playerDiceCounts[currentPlayerId] || 0;
+
+        // If player has 0 dice, automatically pass
+        if (currentPlayerDiceCount === 0) {
+            console.log('Player has 0 dice, auto-passing block');
+            this.showMessage(_('You have no dice - automatically passing'), 'info');
+            // Auto-pass after a short delay so player can see the message
+            setTimeout(() => {
+                this.onPass();
+            }, 1000);
+            return;
+        }
+
         this['addActionButton']('block_btn', _('Block'), 'onBlock');
         this['addActionButton']('pass_btn', _('Pass'), 'onPass');
     }
@@ -643,50 +687,121 @@ export default class DevilsDice extends (GameGui as any) {
 
     notification_diceStolen = (notif: {args: NotificationArgs}): void => {
         console.log('Dice stolen', notif);
-        this.updateDisplay();
+        const stealerId = notif.args.stealerId;
+        const victimId = notif.args.victimId;
+
+        if (stealerId && victimId) {
+            // Store the transfer animation promise so diceRerolled can wait for it
+            this.pendingTransferAnimation = this.animator.animateBetweenPlayers(`dice-${victimId}`, `dice-${stealerId}`, 'die', 1).then(() => {
+                // Update other UI elements (but not dice - that's handled by diceRerolled)
+                this.updatePlayersInfo();
+                this.updateSatansPool();
+                this.updateAllPlayerDice(); // Update victim's dice count
+                this.pendingTransferAnimation = null; // Clear after completion
+            });
+        } else {
+            this.updateDisplay();
+        }
     };
 
     notification_diceToSatansPool = (notif: {args: NotificationArgs}): void => {
         console.log("Dice to Satan's pool", notif);
         const face = notif.args.face;
         const playerId = notif.args.playerId;
+        const dice = notif.args.dice;
+        const diceCount = notif.args.diceCount;
+        const satansPool = notif.args.satansPool; // Check if full pool state is included
 
-        if (face) {
-            // Add the new die to Satan's pool with a unique ID
-            const newDiceId = `pool_${Date.now()}_${Math.random()}`;
-            this.satansPool[newDiceId] = face;
-            console.log(`Added die to Satan's pool: ${newDiceId} = ${face}`);
+        // Update game state immediately
+        if (playerId && diceCount !== undefined) {
+            this.playerDiceCounts[playerId] = diceCount;
         }
 
-        this.updateMyDice(true); // true = animate the dice roll
-        this.updateSatansPool();
-        this.updatePlayersInfo(); // Update dice counts for all players
+        if (playerId && face) {
+            // Update game state data first
+            if (String(playerId) === String(this['player_id']) && dice) {
+                this.myDice = dice;
+            }
+
+            // Store transfer animation promise
+            this.pendingTransferAnimation = this.animator.animateToSatansPool(`dice-${playerId}`, 1).then(() => {
+                // Only update Satan's pool if this notification includes the full pool state
+                // Otherwise, a subsequent notification (like pentagram) will update it
+                if (satansPool) {
+                    console.log('Full Satan\'s pool state provided in diceToSatansPool, updating now');
+                    // Convert Satan's pool data
+                    const convertedSatansPool: Record<string, string> = {};
+                    for (const [key, entry] of Object.entries(satansPool)) {
+                        if (typeof entry === 'object' && entry !== null && 'dice_id' in entry && 'face' in entry) {
+                            const diceEntry = entry as {dice_id: string; face: string};
+                            convertedSatansPool[diceEntry.dice_id] = diceEntry.face;
+                        } else if (typeof entry === 'string') {
+                            convertedSatansPool[key] = entry;
+                        }
+                    }
+                    this.satansPool = convertedSatansPool;
+                } else {
+                    console.log('No full pool state - will be updated by subsequent notification');
+                }
+
+                // After transfer, animate reroll of remaining dice if current player
+                if (String(playerId) === String(this['player_id']) && dice) {
+                    this.animator.animateDiceReroll(`dice_${this['player_id']}`, dice).then(() => {
+                        // Only update Satan's pool visual if we have the complete state
+                        if (satansPool) {
+                            this.updateSatansPool();
+                        }
+                        this.updatePlayersInfo();
+                        this.updateAllPlayerDice();
+                        this.pendingTransferAnimation = null;
+                    });
+                } else {
+                    // For opponents, just update displays after transfer animation
+                    if (satansPool) {
+                        this.updateSatansPool();
+                    }
+                    this.updatePlayersInfo();
+                    this.updateAllPlayerDice();
+                    this.pendingTransferAnimation = null;
+                }
+            });
+        } else {
+            if (face) {
+                const newDiceId = `pool_${Date.now()}_${Math.random()}`;
+                this.satansPool[newDiceId] = face;
+            }
+            this.updateDisplay();
+        }
     };
 
     notification_raiseHell = (notif: {args: NotificationArgs}): void => {
         const playerId = notif.args.playerId;
         const tokens = notif.args.tokens;
         const diceCount = notif.args.diceCount;
+        const previousTokens = playerId ? (this.playerTokens[playerId] || 0) : 0;
 
-        console.log(`Updating player ${playerId}: tokens=${tokens}, diceCount=${diceCount}`);
+        console.log(`Raise Hell - Player ${playerId}: tokens=${tokens}, diceCount=${diceCount}`);
 
-        // Update player tokens if provided
+        // Update game state immediately (for action panel)
         if (playerId && tokens !== undefined) {
-            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
             this.playerTokens[playerId] = tokens;
-            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
         }
-
-        // Update dice count if provided
         if (playerId && diceCount !== undefined) {
-            console.log(`Before update - playerDiceCounts[${playerId}] = ${this.playerDiceCounts[playerId]}`);
             this.playerDiceCounts[playerId] = diceCount;
-            console.log(`After update - playerDiceCounts[${playerId}] = ${this.playerDiceCounts[playerId]}`);
         }
 
-        // If this is the current player, we need to wait for the diceRolled notification
-        // to get the new dice data, but let's update the display now for the token changes
-        this.updateDisplay();
+        // Then animate visually
+        if (playerId && tokens !== undefined && tokens > previousTokens) {
+            const tokensGained = tokens - previousTokens;
+            this.animator.animateFromBank(`player-${playerId}`, tokensGained).then(() => {
+                this.updatePlayersInfo();
+            });
+        } else {
+            this.updatePlayersInfo();
+        }
+
+        // Update display for dice changes
+        this.updateAllPlayerDice();
     };
 
     notification_diceRerolled = (notif: {args: NotificationArgs}): void => {
@@ -695,25 +810,48 @@ export default class DevilsDice extends (GameGui as any) {
         const dice = notif.args.dice || {};
         const diceCount = notif.args.diceCount;
 
-        // Update the dice count for the specific player
+        // Update the dice count for the specific player (state only, don't render yet)
         if (playerId && diceCount !== undefined) {
             this.playerDiceCounts[playerId] = diceCount;
-            this.updatePlayersInfo(); // Refresh the display for all players
         }
 
         // If this is the current player, update their dice display with animation
         // Convert both to strings for comparison to handle type mismatches
         if (String(playerId) === String(this['player_id']) && dice && Object.keys(dice).length > 0) {
             this.myDice = dice;
-            this.updateMyDice(true); // true = animate the dice roll
-            console.log('My dice updated successfully from diceRerolled with animation');
+
+            // Wait for any pending transfer animation before starting reroll
+            const startReroll = () => {
+                this.animator.animateDiceReroll(`dice_${this['player_id']}`, dice).then(() => {
+                    console.log('My dice updated successfully from diceRerolled with animation');
+                    // Update displays after animation completes
+                    this.updatePlayersInfo();
+                    this.updateAllPlayerDice();
+                });
+            };
+
+            if (this.pendingTransferAnimation) {
+                console.log('Waiting for transfer animation to complete before reroll...');
+                this.pendingTransferAnimation.then(startReroll);
+            } else {
+                startReroll();
+            }
         } else {
-            // For opponents, update their blank dice display
-            console.log('NOT current player - updating opponent dice display');
-            console.log(`- Player ID match: ${String(playerId) === String(this['player_id'])}`);
-            console.log(`- Dice data exists: ${dice && Object.keys(dice).length > 0}`);
-            if (playerId) {
-                this.updatePlayerDice(playerId);
+            // For opponents, don't update display immediately - wait for any pending animations
+            console.log('NOT current player - waiting for any pending animations before updating');
+            if (this.pendingTransferAnimation) {
+                this.pendingTransferAnimation.then(() => {
+                    if (playerId) {
+                        this.updatePlayerDice(playerId);
+                    }
+                    this.updatePlayersInfo();
+                });
+            } else {
+                // No pending animations, update immediately
+                if (playerId) {
+                    this.updatePlayerDice(playerId);
+                }
+                this.updatePlayersInfo();
             }
         }
     };
@@ -722,16 +860,22 @@ export default class DevilsDice extends (GameGui as any) {
         console.log('Harvest Skulls action notification received:', notif);
         const playerId = notif.args.playerId;
         const tokens = notif.args.tokens;
+        const previousTokens = playerId ? (this.playerTokens[playerId] || 0) : 0;
 
-        console.log(`Updating player ${playerId}: tokens=${tokens}`);
-
-        // Update player tokens if provided
+        // Update game state immediately (for action panel)
         if (playerId && tokens !== undefined) {
-            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
             this.playerTokens[playerId] = tokens;
-            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
         }
-        this.updateDisplay();
+
+        // Then animate visually
+        if (playerId && tokens !== undefined && tokens > previousTokens) {
+            const tokensGained = tokens - previousTokens;
+            this.animator.animateFromBank(`player-${playerId}`, tokensGained).then(() => {
+                this.updatePlayersInfo();
+            });
+        } else {
+            this.updatePlayersInfo();
+        }
     };
 
     notification_extort = (notif: {args: NotificationArgs}): void => {
@@ -740,63 +884,133 @@ export default class DevilsDice extends (GameGui as any) {
         const targetId = notif.args.targetId;
         const playerNewTokens = notif.args.playerNewTokens;
         const targetNewTokens = notif.args.targetNewTokens;
+        const previousTargetTokens = targetId ? (this.playerTokens[targetId] || 0) : 0;
 
-        console.log(`Updating extort - Player ${playerId}: ${playerNewTokens} tokens, Target ${targetId}: ${targetNewTokens} tokens`);
+        console.log(`Extort - Player ${playerId} steals from Target ${targetId}`);
 
-        // Update both players' token counts
+        // Update game state immediately (for action panel)
         if (playerId && playerNewTokens !== undefined) {
-            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
             this.playerTokens[playerId] = playerNewTokens;
-            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
         }
-
         if (targetId && targetNewTokens !== undefined) {
-            console.log(`Before update - playerTokens[${targetId}] = ${this.playerTokens[targetId]}`);
             this.playerTokens[targetId] = targetNewTokens;
-            console.log(`After update - playerTokens[${targetId}] = ${this.playerTokens[targetId]}`);
         }
 
-        console.log('Calling updateDisplay() after Extort');
-        this.updateDisplay();
+        // Then animate visually
+        if (playerId && targetId && playerNewTokens !== undefined && targetNewTokens !== undefined) {
+            const tokensStolen = previousTargetTokens - targetNewTokens;
+            this.animator.animateBetweenPlayers(`player-${targetId}`, `player-${playerId}`, 'token', tokensStolen).then(() => {
+                this.updatePlayersInfo();
+            });
+        } else {
+            this.updatePlayersInfo();
+        }
     };
 
     notification_reapSoul = (notif: {args: NotificationArgs}): void => {
         console.log('Reap Soul action', notif);
-        this.updateDisplay();
-    };
+        const playerId = notif.args.playerId;
+        const playerNewTokens = notif.args.playerNewTokens;
+        const previousTokens = playerId ? (this.playerTokens[playerId] || 0) : 0;
 
-    notification_pentagram = (notif: {args: NotificationArgs}): void => {
-        console.log('Pentagram action', notif);
+        // Update game state immediately (for action panel)
+        if (playerId && playerNewTokens !== undefined) {
+            this.playerTokens[playerId] = playerNewTokens;
+        }
 
-        // Update Satan's pool with animation if provided
-        if (notif.args.satansPool) {
-            this['animateSatansPoolReroll'](notif.args.satansPool);
+        // Then animate visually
+        if (playerId && playerNewTokens !== undefined && playerNewTokens < previousTokens) {
+            const tokensPaid = previousTokens - playerNewTokens;
+            this.animator.animateToBank(`player-${playerId}`, tokensPaid).then(() => {
+                this.updatePlayersInfo();
+                this.updateDisplay();
+            });
         } else {
             this.updateDisplay();
         }
     };
 
+    notification_pentagram = (notif: {args: NotificationArgs}): void => {
+        console.log('Pentagram action', notif);
+        console.log('Pentagram notification args:', notif.args);
+
+        // Note: Player dice updates are handled by separate diceRerolled notification
+        // We only handle Satan's pool reroll here
+
+        // Wait for any pending transfer animation before updating Satan's pool
+        const updatePool = () => {
+            if (notif.args.satansPool) {
+                this['animateSatansPoolReroll'](notif.args.satansPool);
+            } else {
+                this.updateDisplay();
+            }
+        };
+
+        if (this.pendingTransferAnimation) {
+            console.log('Waiting for pending transfer animation before pentagram pool update...');
+            this.pendingTransferAnimation.then(updatePool);
+        } else {
+            updatePool();
+        }
+    };
+
     notification_impsSet = (notif: {args: NotificationArgs}): void => {
         console.log("Imp's Set action", notif);
-        this.updateDisplay();
+        console.log("Imp's Set notification args:", notif.args);
+        const playerId = notif.args.playerId;
+        const dice = notif.args.dice;
+
+        if (playerId) {
+            // Check if this is the current player
+            const isCurrentPlayer = String(playerId) === String(this['player_id']);
+
+            if (isCurrentPlayer && dice) {
+                // Current player with dice data - use transfer + reroll animation
+                this.myDice = dice;
+
+                this.animator.animateDiceTransferWithReroll({
+                    source: 'bank',
+                    target: `dice-${playerId}`,
+                    count: 1,
+                    playerId: String(playerId),
+                    newDiceData: this.myDice
+                }).then(() => {
+                    this.updatePlayersInfo();
+                    this.updateSatansPool();
+                });
+            } else {
+                // Other player or no dice data - just transfer animation
+                this.animator.animateDiceFromBank(`dice-${playerId}`, 1).then(() => {
+                    this.updateDisplay();
+                });
+            }
+        } else {
+            this.updateDisplay();
+        }
     };
 
     notification_satansSteal = (notif: {args: NotificationArgs}): void => {
         console.log("Satan's Steal action notification received:", notif);
         const playerId = notif.args.playerId;
         const playerNewTokens = notif.args.playerNewTokens;
+        const previousTokens = playerId ? (this.playerTokens[playerId] || 0) : 0;
 
-        console.log(`Updating Satan's Steal - Player ${playerId}: ${playerNewTokens} tokens`);
-
-        // Update player's token count
+        // Update game state immediately (for action panel)
         if (playerId && playerNewTokens !== undefined) {
-            console.log(`Before update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
             this.playerTokens[playerId] = playerNewTokens;
-            console.log(`After update - playerTokens[${playerId}] = ${this.playerTokens[playerId]}`);
         }
 
-        console.log("Calling updateDisplay() after Satan's Steal");
-        this.updateDisplay();
+        // Then animate visually (only payment - dice stealing is handled by diceStolen notification)
+        if (playerId && playerNewTokens !== undefined && playerNewTokens < previousTokens) {
+            const tokensPaid = previousTokens - playerNewTokens;
+            this.animator.animateToBank(`player-${playerId}`, tokensPaid).then(() => {
+                this.updatePlayersInfo();
+                this.updateDisplay();
+            });
+        } else {
+            this.updatePlayersInfo();
+            this.updateDisplay();
+        }
     };
 
     notification_rolloffWinner = (notif: {args: NotificationArgs}): void => {
@@ -859,7 +1073,7 @@ export default class DevilsDice extends (GameGui as any) {
                          style="color: #${player.color}" data-player="${player.id}">
                         <div class="playerhead">
                             <div id="balloon_${player.id}" class="balloon"></div>
-                            <div id="wealth_${player.id}" class="wealth"><img src="${g_gamethemeurl}img/SkullToken1.png" alt="Skull" class="skull-token-icon" /> <span class="token-count">0</span></div>
+                            <div id="wealth_${player.id}" class="wealth"></div>
                             <div class="player-name">${player.name}</div>
                         </div>
                         <div id="dice_${player.id}" class="dice"></div>
@@ -917,16 +1131,53 @@ export default class DevilsDice extends (GameGui as any) {
         // Update each placemat with current tokens
         for (const playerId in this['gamedatas'].players) {
             const tokens = this.playerTokens[playerId] || 0;
-
-            // Update wealth display
-            const wealthElement = dom.byId(`wealth_${playerId}`);
-            if (wealthElement) {
-                const tokenCountSpan = wealthElement.querySelector('.token-count');
-                if (tokenCountSpan) {
-                    tokenCountSpan.textContent = String(tokens);
-                }
-            }
+            this.renderTokenStack(playerId, tokens);
         }
+    }
+
+    /**
+     * Render visual token stack for a player
+     * Shows up to 10 overlapping tokens, then shows "+N" for overflow
+     */
+    private renderTokenStack(playerId: string, count: number): void {
+        const wealthElement = dom.byId(`wealth_${playerId}`);
+        if (!wealthElement) return;
+
+        // Clear existing content
+        wealthElement.innerHTML = '';
+
+        // Add count label first (on the left)
+        const countLabel = document.createElement('span');
+        countLabel.className = 'token-count-label';
+
+        const maxVisible = 10;
+        const visibleTokens = Math.min(count, maxVisible);
+
+        if (count > maxVisible) {
+            countLabel.textContent = `${maxVisible}+${count - maxVisible}`;
+        } else {
+            countLabel.textContent = String(count);
+        }
+
+        wealthElement.appendChild(countLabel);
+
+        // Create token stack container (on the right)
+        const stackContainer = document.createElement('div');
+        stackContainer.className = 'token-stack';
+
+        const overlapOffset = 8; // pixels
+
+        // Create visible tokens
+        for (let i = 0; i < visibleTokens; i++) {
+            const tokenImg = document.createElement('img');
+            tokenImg.src = `${g_gamethemeurl}img/SkullToken1.png`;
+            tokenImg.className = 'skull-token-stacked';
+            tokenImg.style.left = `${i * overlapOffset}px`;
+            tokenImg.alt = 'Skull Token';
+            stackContainer.appendChild(tokenImg);
+        }
+
+        wealthElement.appendChild(stackContainer);
     }
 
     private updateAllPlayerDice(): void {
