@@ -155,6 +155,7 @@ export default class DevilsDice extends (GameGui as any) {
         // Initialize UI
         this.createGameBoard();
         this.cacheUIElements();
+        this.createActionPanel(); // Populate action panel on initial load
         this.updateDisplay();
         this.setupNotifications();
     }
@@ -261,44 +262,77 @@ export default class DevilsDice extends (GameGui as any) {
     ///////////////////////////////////////////////////
     //// Action Button Management
 
-    private addPlayerTurnButtons(): void {
+    private createActionPanel(): void {
         const currentPlayerId = this['player_id'];
         const currentPlayerTokens = this.playerTokens[currentPlayerId] || 0;
+        const isMyTurn = this['isCurrentPlayerActive']();
+
+        // Check if we're in the playerTurn state (state 2) where actions can be declared
+        const gamedatas = this['gamedatas'] as GameData;
+        const currentStateName = gamedatas?.gamestate?.name;
+        const canDeclareAction = isMyTurn && currentStateName === 'playerTurn';
 
         // Icons for hover text (using emoji/unicode)
         const skullIcon = '💀';  // Skull emoji for tokens
         const dieIcon = '🎲';     // Die emoji
 
         const actions = [
-            {id: 'raiseHell', label: _('Raise Hell (Flame)'), handler: 'onRaiseHell', enabled: true, hoverText: `Gain 1 ${skullIcon} & Reroll`},
-            {id: 'harvestSkulls', label: _('Harvest Skulls (Skull)'), handler: 'onHarvestSkulls', enabled: true, hoverText: `Gain 2 ${skullIcon}`},
-            {id: 'extort', label: _('Extort (Trident)'), handler: 'onExtort', enabled: true, hoverText: `Steal 3 ${skullIcon}`},
-            {id: 'reapSoul', label: _('Reap Soul (Scythe) - 2 skulls'), handler: 'onReapSoul', enabled: currentPlayerTokens >= 2, hoverText: `Pay 2 ${skullIcon} & Steal 1 ${dieIcon}`},
-            {id: 'pentagram', label: _('Pentagram'), handler: 'onPentagram', enabled: true, hoverText: `Reroll Satan Pool`},
-            {id: 'impsSet', label: _("Imp's Set"), handler: 'onImpsSet', enabled: true, hoverText: `Gain 1 ${dieIcon}`},
-            {id: 'satansSteal', label: _("Satan's Steal - 6 skulls"), handler: 'onSatansSteal', enabled: currentPlayerTokens >= 6, hoverText: `Pay 6 ${skullIcon} Steal 1 ${dieIcon}`},
+            {id: 'raiseHell', label: _('Raise Hell'), icon: 'flame_icon.svg', handler: 'onRaiseHell', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${skullIcon} & Reroll`},
+            {id: 'harvestSkulls', label: _('Harvest Skulls'), icon: 'skull_icon.svg', handler: 'onHarvestSkulls', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 2 ${skullIcon}`},
+            {id: 'extort', label: _('Extort'), icon: 'trident_icon.svg', handler: 'onExtort', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Steal 3 ${skullIcon}`},
+            {id: 'reapSoul', label: _('Reap Soul'), icon: 'scythe_icon.svg', handler: 'onReapSoul', enabled: canDeclareAction && currentPlayerTokens >= 2, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 2, cost: `2 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
+            {id: 'pentagram', label: _('Pentagram'), icon: 'pentagram_icon.svg', handler: 'onPentagram', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Reroll Satan Pool`},
+            {id: 'impsSet', label: _("Imp's Set"), icon: 'imp_icon.svg', handler: 'onImpsSet', enabled: canDeclareAction, requiresCost: false, cost: '', description: `Gain 1 ${dieIcon}`},
+            {id: 'satansSteal', label: _("Satan's Steal"), icon: 'trident_icon.svg', handler: 'onSatansSteal', enabled: canDeclareAction && currentPlayerTokens >= 6, requiresCost: true, hasEnoughTokens: currentPlayerTokens >= 6, cost: `6 ${skullIcon}`, description: `Steal 1 ${dieIcon}`},
         ];
 
+        const actionIconsContainer = dom.byId('action-icons');
+        if (!actionIconsContainer) return;
+
+        // Clear existing content
+        actionIconsContainer.innerHTML = '';
+
         actions.forEach((action) => {
-            const buttonId = `${action.id}_btn`;
-            this['addActionButton'](buttonId, action.label, action.enabled ? action.handler : null);
+            const buttonId = `${action.id}_icon_btn`;
 
-            // Add hover text attribute
-            const button = document.getElementById(buttonId);
-            if (button && action.hoverText) {
-                button.setAttribute('data-hover-text', action.hoverText);
-            }
+            // Determine disabled state and lock icon
+            // Show lock icon and grayed out ONLY for cost-based actions where player doesn't have enough tokens
+            const insufficientTokens = action.requiresCost && !action.hasEnoughTokens;
+            const disabledClass = action.enabled ? '' : 'disabled';
+            const insufficientTokensClass = insufficientTokens ? 'insufficient-tokens' : '';
+            const lockIcon = insufficientTokens ? '<span class="lock-icon">🔒</span>' : '';
 
-            // Disable button if not enough tokens
-            if (!action.enabled) {
-                if (button) {
-                    button.classList.add('disabled');
-                    button.style.opacity = '0.5';
-                    button.style.cursor = 'not-allowed';
-                    button.title = _('Not enough skull tokens');
-                }
+            // Hide icon for Satan's Steal
+            const showIcon = action.id !== 'satansSteal';
+            const iconHTML = showIcon ? `<img src="${g_gamethemeurl}img/${action.icon}" alt="${action.label}" class="action-icon" />` : '';
+
+            const buttonHTML = `
+                <button id="${buttonId}" class="action-icon-btn ${disabledClass} ${insufficientTokensClass}">
+                    ${lockIcon}
+                    ${iconHTML}
+                    <div class="action-content">
+                        <div class="action-label">${action.label}</div>
+                        ${action.cost ? `<div class="action-cost">${action.cost}</div>` : ''}
+                        <div class="action-description">${action.description}</div>
+                    </div>
+                </button>
+            `;
+
+            actionIconsContainer.insertAdjacentHTML('beforeend', buttonHTML);
+
+            // Add click handler
+            const button = dom.byId(buttonId);
+            if (button && action.enabled) {
+                button.addEventListener('click', () => {
+                    this[action.handler]();
+                });
             }
         });
+    }
+
+    private addPlayerTurnButtons(): void {
+        // Action panel is always visible, just update which buttons are clickable
+        this.createActionPanel();
     }
 
     private addChallengeButtons(): void {
@@ -577,6 +611,8 @@ export default class DevilsDice extends (GameGui as any) {
         if (playerId && diceCount !== undefined) {
             this.playerDiceCounts[playerId] = diceCount;
             this.updatePlayersInfo();
+            // Update the dice display for this specific player
+            this.updatePlayerDice(playerId);
         }
     };
 
@@ -673,9 +709,13 @@ export default class DevilsDice extends (GameGui as any) {
             this.updateMyDice(true); // true = animate the dice roll
             console.log('My dice updated successfully from diceRerolled with animation');
         } else {
-            console.log('NOT updating my dice because:');
+            // For opponents, update their blank dice display
+            console.log('NOT current player - updating opponent dice display');
             console.log(`- Player ID match: ${String(playerId) === String(this['player_id'])}`);
             console.log(`- Dice data exists: ${dice && Object.keys(dice).length > 0}`);
+            if (playerId) {
+                this.updatePlayerDice(playerId);
+            }
         }
     };
 
@@ -786,96 +826,149 @@ export default class DevilsDice extends (GameGui as any) {
         const gameArea = dom.byId('game_play_area');
         if (!gameArea) return;
 
+        const gamedatas = this['gamedatas'] as GameData;
+        const players = gamedatas.players;
+        const playerCount = Object.keys(players).length;
+        const currentPlayerId = this['player_id'];
+
+        // Build action panel HTML
+        const actionPanelHTML = `
+            <div id="myactions">
+                <div class="actionrowhead"><span>${_('Actions on your turn')}:</span></div>
+                <div id="action-icons"></div>
+            </div>
+        `;
+
+        // Build circular layout HTML with player positions
+        let playerPositionsHTML = '';
+        let playerIndex = 0;
+
+        // Sort players to put current player first
+        const sortedPlayers = Object.values(players).sort((a, b) => {
+            if (a.id === currentPlayerId) return -1;
+            if (b.id === currentPlayerId) return 1;
+            return 0;
+        });
+
+        sortedPlayers.forEach((player) => {
+            const isCurrentPlayer = player.id === currentPlayerId;
+            const playerClass = isCurrentPlayer ? 'mine active' : '';
+
+            playerPositionsHTML += `
+                <div class="oncircle player-${playerIndex}">
+                    <div id="placemat_${player.id}" class="placemat player-${playerIndex} ${playerClass}"
+                         style="color: #${player.color}" data-player="${player.id}">
+                        <div class="playerhead">
+                            <div id="balloon_${player.id}" class="balloon"></div>
+                            <div id="wealth_${player.id}" class="wealth">💀 <span class="token-count">0</span></div>
+                            <div class="player-name">${player.name}</div>
+                        </div>
+                        <div id="dice_${player.id}" class="dice"></div>
+                    </div>
+                </div>
+            `;
+            playerIndex++;
+        });
+
+        const circleHTML = `
+            <div id="circle-wrapper">
+                <div id="bank">
+                    <img src="${g_gamethemeurl}img/bag.png" alt="Bank" class="bank-image" />
+                </div>
+                <div id="circle" class="circle-${playerCount}">
+                    <div class="oncircle satans-pool-wrapper">
+                        <span class="satans-pool-title">${_("Satan's Pool")}</span>
+                        <div id="satans-pool-deck" data-deck="satans-pool">
+                            <div id="satans-pool-container">
+                                <div id="satans-pool" class="pool-dice-area"></div>
+                            </div>
+                        </div>
+                    </div>
+                    ${playerPositionsHTML}
+                </div>
+            </div>
+        `;
+
         gameArea.insertAdjacentHTML(
             'beforeend',
             `
-            <div id="board">
-                <div id="my-dice-area">
-                    <h3>${_('My Dice')}</h3>
-                    <div id="my-dice"></div>
-                </div>
-                
-                <div id="satans-pool-area">
-                    <h3>${_("Satan's Pool")}</h3>
-                    <div id="satans-pool"></div>
-                </div>
-                
-                <div id="game-status">
-                    <div id="current-action-info"></div>
-                    <div id="challenge-prompt" style="display: none;"></div>
-                    <div id="block-prompt" style="display: none;"></div>
-                </div>
+            <div id="game-wrap">
+                ${actionPanelHTML}
+                ${circleHTML}
             </div>
-        `
+            `
         );
     }
 
     private cacheUIElements(): void {
         this.uiElements = {
-            myDice: dom.byId('my-dice'),
             satansPool: dom.byId('satans-pool'),
         };
     }
 
     private updateDisplay(): void {
         this.updatePlayersInfo();
-        this.updateMyDice();
+        this.updateAllPlayerDice();
         this.updateSatansPool();
     }
 
     private updatePlayersInfo(): void {
         if (!this['gamedatas']?.players) return;
 
-        // Update BGA player panels with dice count and skull tokens
+        // Update each placemat with current tokens
         for (const playerId in this['gamedatas'].players) {
             const tokens = this.playerTokens[playerId] || 0;
-            const diceCount = this.playerDiceCounts[playerId] || 0;
 
-            // Find the player panel
-            const playerPanel = dom.byId(`player_board_${playerId}`);
-            if (playerPanel) {
-                // Remove existing game info if it exists
-                const existingInfo = playerPanel.querySelector('.player-game-info');
-                if (existingInfo) {
-                    existingInfo.remove();
-                }
-
-                // Add new game info to player panel
-                const gameInfo = document.createElement('div');
-                gameInfo.className = 'player-game-info';
-                gameInfo.innerHTML = `
-                    <div class="player-skull-tokens"><img src="${g_gamethemeurl}img/skull_tokens.png" alt="Skulls" class="skull-token-icon" /> ${tokens}</div>
-                    <div class="player-dice-count">🎲 ${diceCount}</div>
-                    ${this.targetSelectionCallback ? `<button class="target-btn" data-player-id="${playerId}">${_('Select')}</button>` : ''}
-                `;
-
-                // Add to player panel
-                playerPanel.appendChild(gameInfo);
-
-                // Add target selection event listener if needed
-                if (this.targetSelectionCallback) {
-                    const targetBtn = gameInfo.querySelector('.target-btn') as HTMLElement;
-                    if (targetBtn) {
-                        targetBtn.addEventListener('click', (e: Event) => {
-                            const target = e.target as HTMLElement;
-                            const playerId = target.dataset['playerId'];
-                            if (playerId && this.targetSelectionCallback) {
-                                this.targetSelectionCallback(playerId);
-                                this.targetSelectionCallback = null;
-                                this.updatePlayersInfo(); // Remove selection buttons
-                            }
-                        });
-                    }
+            // Update wealth display
+            const wealthElement = dom.byId(`wealth_${playerId}`);
+            if (wealthElement) {
+                const tokenCountSpan = wealthElement.querySelector('.token-count');
+                if (tokenCountSpan) {
+                    tokenCountSpan.textContent = String(tokens);
                 }
             }
         }
     }
 
-    private updateMyDice(animate: boolean = false): void {
-        const myDiceArea = this.uiElements.myDice;
-        if (!myDiceArea) return;
+    private updateAllPlayerDice(): void {
+        if (!this['gamedatas']?.players) return;
 
+        for (const playerId in this['gamedatas'].players) {
+            this.updatePlayerDice(playerId);
+        }
+    }
+
+    private updatePlayerDice(playerId: string | number): void {
+        const diceContainer = dom.byId(`dice_${playerId}`);
+        if (!diceContainer) return;
+
+        const currentPlayerId = this['player_id'];
+        const isCurrentPlayer = String(playerId) === String(currentPlayerId);
+        const diceCount = this.playerDiceCounts[playerId] || 0;
+
+        // Clear existing dice
+        diceContainer.innerHTML = '';
+
+        if (isCurrentPlayer) {
+            // Show actual dice faces for current player
+            const playerDice = this.myDice || {};
+            this.setDiceDisplay(diceContainer, playerDice);
+        } else {
+            // Show blank dice for opponents
+            for (let i = 0; i < diceCount; i++) {
+                const blankDie = document.createElement('div');
+                blankDie.className = 'die blank-die';
+                blankDie.setAttribute('data-face', 'hidden');
+                diceContainer.appendChild(blankDie);
+            }
+        }
+    }
+
+    private updateMyDice(animate: boolean = false): void {
         console.log('updateMyDice: myDice data structure:', this.myDice);
+
+        const myDiceArea = dom.byId(`dice_${this['player_id']}`);
+        if (!myDiceArea) return;
 
         if (animate) {
             // Animate dice rolling before showing final faces

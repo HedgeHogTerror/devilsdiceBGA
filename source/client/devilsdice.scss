@@ -1,133 +1,409 @@
-/* Devil's Dice CSS */
+/* Devil's Dice CSS - Coup-style circular layout */
 
-#board {
+/* Main game wrapper */
+#game-wrap {
+    display: flex;
+    flex-direction: row;
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    gap: 30px;
+    align-items: flex-start;
+}
+
+/* Action panel on left side - always visible */
+#myactions {
+    width: 240px;
+    min-width: 240px;
+    background: #000000;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+
+    .actionrowhead {
+        font-size: 16px;
+        font-weight: bold;
+        color: #ffffff;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #ffffff;
+        text-align: center;
+    }
+}
+
+#action-icons {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
+    gap: 10px;
 }
 
-#players-area {
-    background: #f5f5f5;
-    border-radius: 8px;
-    padding: 15px;
-
-    h3 {
-        margin-top: 0;
-        color: #333;
-    }
-}
-
-#players-info {
+/* Circle container wrapper */
+#circle-wrapper {
+    flex: 1;
     display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.player-info {
-    background: white;
-    border-radius: 6px;
-    padding: 10px 15px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    display: flex;
+    justify-content: center;
     align-items: center;
-    gap: 10px;
+    min-width: 0;
+    position: relative;
+}
 
-    .player-name {
-        font-weight: bold;
-        font-size: 14px;
-    }
+/* Bank in upper right of circle wrapper */
+#bank {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 100;
 
-    .skull-tokens,
-    .dice-count {
-        background: #eee;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 12px;
-    }
-
-    .target-btn {
-        background: #4a90e2;
-        color: white;
-        border: none;
-        padding: 4px 8px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-
-        &:hover {
-            background: #357abd;
-        }
-    }
-
-    &.current-player {
-        border: 2px solid #4a90e2;
-        background: #e8f4fd;
+    .bank-image {
+        width: 80px;
+        height: 80px;
+        object-fit: contain;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
     }
 }
 
-#my-dice-area {
-    background: #e8f4fd;
-    border-radius: 8px;
-    padding: 15px;
-    border: 2px solid #4a90e2;
-
-    h3 {
-        margin-top: 0;
-        color: #2c5aa0;
-    }
+/* Circular layout for players and Satan's pool */
+#circle {
+    position: relative;
+    width: 600px;
+    height: 600px;
+    margin: 20px auto;
 }
 
-#my-dice {
+.oncircle {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    /* Note: Individual transforms on children will position them */
+}
+
+/* Satan's Pool wrapper in center */
+.satans-pool-wrapper {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    flex-direction: column;
+    align-items: center;
+    transform: translate(-50%, -50%);
+    z-index: 10;
 }
 
-#satans-pool-area {
-    background: #fde8e8;
+.satans-pool-title {
+    font-weight: bold;
+    color: #000000;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+#satans-pool-deck {
+    width: 200px;
+    height: 200px;
+    background: transparent;
     background-image: url('img/Devils_Dice_board.jpg');
     background-position: center;
     background-size: contain;
     background-repeat: no-repeat;
-    border-radius: 8px;
-    padding: 15px;
-    border: 2px solid #e74c3c;
-    aspect-ratio: 1 / 1;
-    min-height: 200px;
-    position: relative;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
 
-    h3 {
-        margin-top: 0;
-        color: #c0392b;
-        background: rgba(253, 232, 232, 0.9);
-        padding: 5px 10px;
-        border-radius: 4px;
-        display: inline-block;
+    #satans-pool-container {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    #satans-pool {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        justify-content: center;
+        max-width: 180px;
     }
 }
 
-#satans-pool {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+/* Player positioning around circle - balanced spacing (240px radius) with counter-rotation */
+/* Counter-rotation keeps placemats upright regardless of position */
+/* Calculation: Satan's Pool radius (100px) + visual gap (40px) + placemat consideration (100px) = 240px */
+/* Apply transforms to .placemat child instead of .oncircle parent */
+.circle-2 .player-0 .placemat {
+    transform: rotate(0deg) translate(240px) rotate(-0deg) translate(-50%, -50%);
+}
+.circle-2 .player-1 .placemat {
+    transform: rotate(180deg) translate(240px) rotate(-180deg) translate(-50%, -50%);
 }
 
-.die {
-    width: 60px;
-    height: 60px;
-    background: #000000;
-    border: 5px solid #333;
+.circle-3 .player-0 .placemat {
+    transform: rotate(0deg) translate(240px) rotate(-0deg) translate(-50%, -50%);
+}
+.circle-3 .player-1 .placemat {
+    transform: rotate(120deg) translate(240px) rotate(-120deg) translate(-50%, -50%);
+}
+.circle-3 .player-2 .placemat {
+    transform: rotate(240deg) translate(240px) rotate(-240deg) translate(-50%, -50%);
+}
+
+.circle-4 .player-0 .placemat {
+    transform: rotate(0deg) translate(240px) rotate(-0deg) translate(-50%, -50%);
+}
+.circle-4 .player-1 .placemat {
+    transform: rotate(90deg) translate(240px) rotate(-90deg) translate(-50%, -50%);
+}
+.circle-4 .player-2 .placemat {
+    transform: rotate(180deg) translate(240px) rotate(-180deg) translate(-50%, -50%);
+}
+.circle-4 .player-3 .placemat {
+    transform: rotate(270deg) translate(240px) rotate(-270deg) translate(-50%, -50%);
+}
+
+.circle-5 .player-0 .placemat {
+    transform: rotate(0deg) translate(240px) rotate(-0deg) translate(-50%, -50%);
+}
+.circle-5 .player-1 .placemat {
+    transform: rotate(72deg) translate(240px) rotate(-72deg) translate(-50%, -50%);
+}
+.circle-5 .player-2 .placemat {
+    transform: rotate(144deg) translate(240px) rotate(-144deg) translate(-50%, -50%);
+}
+.circle-5 .player-3 .placemat {
+    transform: rotate(216deg) translate(240px) rotate(-216deg) translate(-50%, -50%);
+}
+.circle-5 .player-4 .placemat {
+    transform: rotate(288deg) translate(240px) rotate(-288deg) translate(-50%, -50%);
+}
+
+.circle-6 .player-0 .placemat {
+    transform: rotate(0deg) translate(240px) rotate(-0deg) translate(-50%, -50%);
+}
+.circle-6 .player-1 .placemat {
+    transform: rotate(60deg) translate(240px) rotate(-60deg) translate(-50%, -50%);
+}
+.circle-6 .player-2 .placemat {
+    transform: rotate(120deg) translate(240px) rotate(-120deg) translate(-50%, -50%);
+}
+.circle-6 .player-3 .placemat {
+    transform: rotate(180deg) translate(240px) rotate(-180deg) translate(-50%, -50%);
+}
+.circle-6 .player-4 .placemat {
+    transform: rotate(240deg) translate(240px) rotate(-240deg) translate(-50%, -50%);
+}
+.circle-6 .player-5 .placemat {
+    transform: rotate(300deg) translate(240px) rotate(-300deg) translate(-50%, -50%);
+}
+
+/* Player placemat */
+.placemat {
+    background: transparent;
+    border: none;
     border-radius: 8px;
+    padding: 12px;
+    min-width: 180px;
+    box-shadow: none;
+    transition: all 0.3s ease;
+
+    &.mine {
+        border: none;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    &.active {
+        background: transparent;
+    }
+
+    .playerhead {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #000000;
+        padding-bottom: 8px;
+
+        .player-name {
+            font-weight: bold;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .wealth {
+            font-size: 13px;
+            font-weight: bold;
+            color: #e74c3c;
+
+            .token-count {
+                font-size: 14px;
+            }
+        }
+
+        .balloon {
+            // Space for status messages
+            min-height: 20px;
+            font-size: 11px;
+            font-style: italic;
+            color: #666;
+        }
+    }
+
+    .dice {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 50px;
+        justify-content: center;
+        align-items: center;
+        max-width: 147px; /* 3 dice (45px each with box-sizing) + 2 gaps (6px each) = 147px */
+        margin: 0 auto;
+    }
+}
+
+/* Action icon buttons */
+.action-icon-btn {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 50px;
+    max-height: 60px;
+    padding: 8px 10px;
+    background: #3a3a3a;
+    border: 2px solid #ffffff;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    overflow: visible;
+    gap: 10px;
+
+    &:hover:not(.disabled) {
+        background: #4a4a4a;
+        transform: translateX(5px);
+        box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+        border-color: #ffffff;
+    }
+
+    &:active:not(.disabled) {
+        transform: translateX(3px) scale(0.98);
+    }
+
+    // Disabled state - keep normal appearance but disable interaction
+    &.disabled {
+        cursor: default;
+        // Keep all visual styling the same as enabled state
+        // No opacity, grayscale, or color changes
+        // Just disable pointer events on hover
+    }
+
+    // Insufficient tokens state - show grayed out with lock icon
+    &.insufficient-tokens {
+        cursor: not-allowed;
+        opacity: 0.7;
+        background: #2a2a2a;
+        border-color: #666666;
+        filter: grayscale(100%);
+
+        // Diagonal stripe pattern
+        &::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0, 0, 0, 0.3) 10px, rgba(0, 0, 0, 0.3) 20px);
+            border-radius: 6px;
+            pointer-events: none;
+        }
+
+        .action-icon {
+            opacity: 0.5;
+        }
+
+        .action-label {
+            color: #999999;
+        }
+
+        .action-description {
+            color: #777777;
+        }
+    }
+
+    .lock-icon {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        font-size: 14px;
+        z-index: 10;
+        opacity: 0.7;
+    }
+
+    .action-icon {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        object-fit: contain;
+        transition: transform 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    &:hover:not(.disabled) .action-icon {
+        transform: scale(1.1);
+    }
+
+    .action-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .action-label {
+        font-size: 12px;
+        font-weight: bold;
+        color: #ffffff;
+        line-height: 1.2;
+    }
+
+    .action-cost {
+        font-size: 10px;
+        color: #e74c3c;
+        font-weight: bold;
+        line-height: 1;
+    }
+
+    .action-description {
+        font-size: 9px;
+        color: #cccccc;
+        line-height: 1.2;
+    }
+}
+
+/* Dice styling */
+.die {
+    width: 45px;
+    height: 45px;
+    background: #000000;
+    border: 3px solid #333;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 20px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     cursor: pointer;
     transition: transform 0.1s;
+    flex-shrink: 0;
+    box-sizing: border-box;
 
     &:hover {
         transform: scale(1.05);
@@ -156,34 +432,26 @@
     &[data-face='imp'] {
         color: white;
     }
+
+    // Blank dice for opponents (no face visible)
+    &.blank-die {
+        background: #2a2a2a;
+        border-color: #444;
+
+        // Hide any content
+        color: transparent;
+        font-size: 0;
+    }
 }
 
 .pool-die {
     border-color: #e74c3c;
+    width: 35px;
+    height: 35px;
+    font-size: 16px;
 }
 
-#game-status {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 15px;
-
-    #challenge-prompt,
-    #block-prompt {
-        background: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 4px;
-        padding: 10px;
-        margin-top: 10px;
-        color: #856404;
-        font-weight: bold;
-    }
-
-    #block-prompt {
-        background: #f8d7da;
-        border-color: #f5c6cb;
-        color: #721c24;
-    }
-}
+/* Challenge and block prompts can be shown via BGA messaging system */
 
 /* Action buttons styling */
 .bgabutton {
@@ -295,18 +563,146 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
-    #board {
+    #game-wrap {
+        flex-direction: column;
         padding: 10px;
+        gap: 20px;
     }
 
-    #players-info {
-        flex-direction: column;
+    #myactions {
+        width: 100%;
+        position: static;
+        max-height: none;
+        padding: 15px;
+    }
+
+    #action-icons {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+
+        .action-icon-btn {
+            min-height: 45px;
+            max-height: 55px;
+            padding: 6px 8px;
+
+            .action-icon {
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+            }
+
+            .action-content {
+                .action-label {
+                    font-size: 10px;
+                }
+
+                .action-cost {
+                    font-size: 9px;
+                }
+
+                .action-description {
+                    font-size: 8px;
+                }
+            }
+        }
+    }
+
+    #circle-wrapper {
+        width: 100%;
+    }
+
+    #circle {
+        width: 400px;
+        height: 400px;
+    }
+
+    // Mobile radius with counter-rotation (140px)
+    .circle-2 .player-0 {
+        transform: translate(-50%, -50%) rotate(0deg) translate(140px) rotate(-0deg);
+    }
+    .circle-2 .player-1 {
+        transform: translate(-50%, -50%) rotate(180deg) translate(140px) rotate(-180deg);
+    }
+
+    .circle-3 .player-0 {
+        transform: translate(-50%, -50%) rotate(0deg) translate(140px) rotate(-0deg);
+    }
+    .circle-3 .player-1 {
+        transform: translate(-50%, -50%) rotate(120deg) translate(140px) rotate(-120deg);
+    }
+    .circle-3 .player-2 {
+        transform: translate(-50%, -50%) rotate(240deg) translate(140px) rotate(-240deg);
+    }
+
+    .circle-4 .player-0 {
+        transform: translate(-50%, -50%) rotate(0deg) translate(140px) rotate(-0deg);
+    }
+    .circle-4 .player-1 {
+        transform: translate(-50%, -50%) rotate(90deg) translate(140px) rotate(-90deg);
+    }
+    .circle-4 .player-2 {
+        transform: translate(-50%, -50%) rotate(180deg) translate(140px) rotate(-180deg);
+    }
+    .circle-4 .player-3 {
+        transform: translate(-50%, -50%) rotate(270deg) translate(140px) rotate(-270deg);
+    }
+
+    .circle-5 .player-0 {
+        transform: translate(-50%, -50%) rotate(0deg) translate(140px) rotate(-0deg);
+    }
+    .circle-5 .player-1 {
+        transform: translate(-50%, -50%) rotate(72deg) translate(140px) rotate(-72deg);
+    }
+    .circle-5 .player-2 {
+        transform: translate(-50%, -50%) rotate(144deg) translate(140px) rotate(-144deg);
+    }
+    .circle-5 .player-3 {
+        transform: translate(-50%, -50%) rotate(216deg) translate(140px) rotate(-216deg);
+    }
+    .circle-5 .player-4 {
+        transform: translate(-50%, -50%) rotate(288deg) translate(140px) rotate(-288deg);
+    }
+
+    .circle-6 .player-0 {
+        transform: translate(-50%, -50%) rotate(0deg) translate(140px) rotate(-0deg);
+    }
+    .circle-6 .player-1 {
+        transform: translate(-50%, -50%) rotate(60deg) translate(140px) rotate(-60deg);
+    }
+    .circle-6 .player-2 {
+        transform: translate(-50%, -50%) rotate(120deg) translate(140px) rotate(-120deg);
+    }
+    .circle-6 .player-3 {
+        transform: translate(-50%, -50%) rotate(180deg) translate(140px) rotate(-180deg);
+    }
+    .circle-6 .player-4 {
+        transform: translate(-50%, -50%) rotate(240deg) translate(140px) rotate(-240deg);
+    }
+    .circle-6 .player-5 {
+        transform: translate(-50%, -50%) rotate(300deg) translate(140px) rotate(-300deg);
+    }
+
+    .placemat {
+        min-width: 140px;
+        padding: 8px;
+    }
+
+    #satans-pool-deck {
+        width: 120px;
+        height: 120px;
     }
 
     .die {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
+        width: 35px;
+        height: 35px;
+        font-size: 16px;
+    }
+
+    .pool-die {
+        width: 28px;
+        height: 28px;
+        font-size: 14px;
     }
 }
 
