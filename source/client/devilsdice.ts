@@ -3,7 +3,10 @@
 import 'ebg/counter';
 import * as GameGui from 'ebg/core/gamegui';
 import * as dom from 'dojo/dom';
-import {GameObjectAnimator} from './animator';
+import {GameObjectAnimator, DIE_TUMBLE_MS} from './animator';
+
+// Satan's pool dice glide to their slot in this long - must match the .pool-die transition in the SCSS
+const POOL_GLIDE_MS = 400;
 
 // Type definitions for better type safety
 interface GameData extends BGA.Gamedatas {
@@ -81,6 +84,9 @@ export default class DevilsDice extends (GameGui as any) {
     private animator!: GameObjectAnimator;
     private pendingTransferAnimation: Promise<void> | null = null;
 
+    // True until the first onEnteringState after setup (i.e. page load / refresh)
+    private restoringState = true;
+
     // UI elements cache
     private uiElements: {
         myDice?: HTMLElement | null;
@@ -95,7 +101,7 @@ export default class DevilsDice extends (GameGui as any) {
         console.log('Starting game setup', gamedatas);
 
         // Initialize animator
-        this.animator = new GameObjectAnimator(g_gamethemeurl);
+        this.animator = new GameObjectAnimator(g_gamethemeurl, () => this.animationsActive());
 
         // Store game data with proper typing and convert format
         this.playerTokens = {};
@@ -182,7 +188,22 @@ export default class DevilsDice extends (GameGui as any) {
 
         // Update UI based on state
         this.updateUIForState(stateName);
+
+        this.restoringState = false;
     }
+
+    /**
+     * Whether animations should play. False in fast replay / while loading, when the player has
+     * turned animations off, or when the tab is hidden - animations must then complete instantly.
+     */
+    private animationsActive(): boolean {
+        const bgaCheck = this['bgaAnimationsActive'];
+        if (typeof bgaCheck === 'function') {
+            return bgaCheck.call(this);
+        }
+        return !this['instantaneousMode'];
+    }
+
 
     onLeavingState(stateName: string): void {
         console.log(`Leaving state: ${stateName}`);
@@ -257,12 +278,19 @@ export default class DevilsDice extends (GameGui as any) {
     private enteringState_challengeWindow(args: any): void {
         this.showChallengePrompt();
 
-        // Hourglass over everyone who may challenge: all players except the claimant, if they have dice
+        // Hourglass over everyone who may challenge
         const stateArgs = args?.args ?? args;
-        const actionPlayerId = String(stateArgs?.action_player_id ?? '');
-        const responders = Object.keys(this['gamedatas']?.players || {}).filter(
-            (playerId) => playerId !== actionPlayerId && (this.playerDiceCounts[playerId] || 0) > 0
-        );
+        let responders: string[];
+        if (this.restoringState && Array.isArray(stateArgs?.waiting_player_ids)) {
+            // Page load / refresh: the server's list excludes players who already passed
+            responders = stateArgs.waiting_player_ids.map(String);
+        } else {
+            // Live: all players except the claimant who have dice (the server's list isn't set yet)
+            const actionPlayerId = String(stateArgs?.action_player_id ?? '');
+            responders = Object.keys(this['gamedatas']?.players || {}).filter(
+                (playerId) => playerId !== actionPlayerId && (this.playerDiceCounts[playerId] || 0) > 0
+            );
+        }
         responders.forEach((playerId) => this.showWaitingBubble(playerId));
     }
 
@@ -301,6 +329,9 @@ export default class DevilsDice extends (GameGui as any) {
 
         this.removeResponseBubble(playerId);
 
+        // Skip transient bubbles while fast-forwarding a replay / loading
+        if (this['instantaneousMode']) return null;
+
         placemat.insertAdjacentHTML(
             'beforeend',
             `<div id="response-bubble-${playerId}" class="response-bubble${waiting ? ' waiting' : ''}">${contentHTML}</div>`
@@ -331,7 +362,7 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     private showWaitingBubble(playerId: string): void {
-        this.setResponseBubble(playerId, '<span class="hourglass">⏳</span>', true);
+        this.setResponseBubble(playerId, `<span class="hourglass" role="img" aria-label="${_('Deciding')}">⏳</span>`, true);
     }
 
     /** Window closed: fade out anyone who never got to respond (e.g. someone else challenged first) */
@@ -349,10 +380,10 @@ export default class DevilsDice extends (GameGui as any) {
         let content = '';
         switch (notif.args.response) {
             case 'pass':
-                content = '<span class="response-icon">👍</span>';
+                content = `<span class="response-icon" role="img" aria-label="${_('Pass')}">👍</span>`;
                 break;
             case 'challenge':
-                content = '<span class="response-icon">🚫</span>';
+                content = `<span class="response-icon" role="img" aria-label="${_('Challenge')}">🚫</span>`;
                 break;
             case 'block': {
                 const face = notif.args.face || '';
@@ -497,14 +528,15 @@ export default class DevilsDice extends (GameGui as any) {
     }
 
     /**
-     * Show the dice overflow face picker as a dialog above Satan's pool
-     * (2 rows of 3 dice, drawn like the dice on the player mats)
+     * Dice overflow: make the six symbol circles on Satan's pool board clickable, so the player
+     * picks the face directly on the board (BGA guideline: act on board components, not the action bar)
      */
     private addDiceOverflowButtons(): void {
         this.hideDiceOverflowDialog();
 
+        const deck = dom.byId('satans-pool-deck');
         const wrapper = document.querySelector<HTMLElement>('.satans-pool-wrapper');
-        if (!wrapper) return;
+        if (!deck || !wrapper) return;
 
         const faces = [
             {id: 'flame', label: _('Flame')},
@@ -516,15 +548,13 @@ export default class DevilsDice extends (GameGui as any) {
         ];
 
         const buttonsHTML = faces
-            .map(
-                (face) => `
-                <button type="button" class="overflow-face-btn" id="overflow_${face.id}_btn" data-face="${face.id}" title="${face.label}" aria-label="${face.label}">
-                    <div class="die my-die" data-face="${face.id}">${this.getDiceSymbol(face.id)}</div>
-                </button>`
-            )
+            .map((face) => {
+                const label = _('Place a ${face} in Satan\'s pool').replace('${face}', face.label);
+                return `<button type="button" class="overflow-face-btn" id="overflow_${face.id}_btn" data-face="${face.id}" title="${label}" aria-label="${label}"></button>`;
+            })
             .join('');
 
-        wrapper.insertAdjacentHTML('beforeend', `<div id="overflow-dialog" class="overflow-dialog" role="dialog">${buttonsHTML}</div>`);
+        deck.insertAdjacentHTML('beforeend', `<div id="overflow-dialog" class="overflow-picker">${buttonsHTML}</div>`);
         wrapper.classList.add('overflow-open');
 
         const dialog = dom.byId('overflow-dialog');
@@ -888,22 +918,12 @@ export default class DevilsDice extends (GameGui as any) {
                     this.satansPool[newDiceId] = face;
                 }
 
-                // After transfer, animate reroll of remaining dice if current player
-                if (String(playerId) === String(this['player_id']) && dice) {
-                    this.animator.animateDiceReroll(`dice_${this['player_id']}`, dice).then(() => {
-                        // Always update Satan's pool visual after animation
-                        this.updateSatansPool();
-                        this.updatePlayersInfo();
-                        this.updateAllPlayerDice();
-                        this.pendingTransferAnimation = null;
-                    });
-                } else {
-                    // For opponents, just update displays after transfer animation
-                    this.updateSatansPool();
-                    this.updatePlayersInfo();
-                    this.updateAllPlayerDice();
-                    this.pendingTransferAnimation = null;
-                }
+                // No reroll animation here: a die moving to the pool doesn't reroll the hand.
+                // (Overflow leaves the hand unchanged; losing a die sends its own diceRerolled.)
+                this.updateSatansPool();
+                this.updatePlayersInfo();
+                this.updateAllPlayerDice();
+                this.pendingTransferAnimation = null;
             });
         } else {
             if (face) {
@@ -1388,21 +1408,6 @@ export default class DevilsDice extends (GameGui as any) {
         }
     }
 
-    private updateMyDice(animate: boolean = false): void {
-        console.log('updateMyDice: myDice data structure:', this.myDice);
-
-        const myDiceArea = dom.byId(`dice_${this['player_id']}`);
-        if (!myDiceArea) return;
-
-        if (animate) {
-            // Animate dice rolling before showing final faces
-            this.animateDiceRoll(myDiceArea, this.myDice);
-        } else {
-            // Direct update without animation
-            this.setDiceDisplay(myDiceArea, this.myDice);
-        }
-    }
-
     private setDiceDisplay(container: HTMLElement, diceData: Record<string, string>): void {
         let html = '';
         for (const diceId in diceData) {
@@ -1426,78 +1431,6 @@ export default class DevilsDice extends (GameGui as any) {
         }
 
         container.innerHTML = html;
-    }
-
-    private animateDiceRoll(container: HTMLElement, finalDiceData: Record<string, string>): void {
-        const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
-        const diceElements: Record<string, HTMLElement> = {};
-
-        // Create initial dice elements
-        let html = '';
-        for (const diceId in finalDiceData) {
-            html += `<div class="die my-die rolling" data-face="flame" data-dice-id="${diceId}">
-                ${this.getDiceSymbol('flame')}
-            </div>`;
-        }
-        container.innerHTML = html;
-
-        // Cache dice elements
-        const diceNodes = container.querySelectorAll('.die');
-        const diceIds = Object.keys(finalDiceData);
-        diceNodes.forEach((element, index) => {
-            if (index < diceIds.length && diceIds[index]) {
-                diceElements[diceIds[index]] = element as HTMLElement;
-            }
-        });
-
-        // Animate through all faces
-        let currentFaceIndex = 0;
-        const animationInterval = setInterval(() => {
-            const currentFace = faces[currentFaceIndex];
-            if (!currentFace) return;
-
-            // Update all dice to show current face
-            for (const diceId in diceElements) {
-                const element = diceElements[diceId];
-                if (element) {
-                    element.setAttribute('data-face', currentFace);
-                    element.innerHTML = this.getDiceSymbol(currentFace);
-                }
-            }
-
-            currentFaceIndex++;
-
-            // After cycling through all faces, show final results
-            if (currentFaceIndex >= faces.length) {
-                clearInterval(animationInterval);
-
-                // Show final faces after a brief delay
-                setTimeout(() => {
-                    for (const diceId in diceElements) {
-                        const element = diceElements[diceId];
-                        const finalDiceValue = finalDiceData[diceId];
-
-                        if (!element || !finalDiceValue) continue;
-
-                        // Handle both string and object formats
-                        let finalFace: string;
-                        if (typeof finalDiceValue === 'string') {
-                            finalFace = finalDiceValue;
-                        } else if (typeof finalDiceValue === 'object' && finalDiceValue !== null) {
-                            finalFace = (finalDiceValue as any).face || (finalDiceValue as any).dice_face || (finalDiceValue as any).value || '';
-                        } else {
-                            finalFace = '';
-                        }
-
-                        if (finalFace) {
-                            element.setAttribute('data-face', finalFace);
-                            element.innerHTML = this.getDiceSymbol(finalFace);
-                            element.classList.remove('rolling');
-                        }
-                    }
-                }, 100);
-            }
-        }, 100); // 100ms between each face
     }
 
     private updateSatansPool(): void {
@@ -1571,8 +1504,13 @@ export default class DevilsDice extends (GameGui as any) {
             return Promise.resolve();
         }
 
+        // Fast replay / animations off: just show the result
+        if (!this.animationsActive()) {
+            this.updateSatansPool();
+            return Promise.resolve();
+        }
+
         return new Promise<void>((resolve) => {
-            const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
             const diceElements: Record<string, HTMLElement> = {};
             const diceIds = Object.keys(convertedSatansPool);
 
@@ -1599,7 +1537,7 @@ export default class DevilsDice extends (GameGui as any) {
             // Force layout so the starting positions register before transitioning
             void satansPoolArea.offsetWidth;
 
-            // Gather the dice into a compact grid in the middle of the board while they roll
+            // Gather the dice into a compact grid in the middle of the board while they tumble
             const firstDie = diceElements[diceIds[0] || ''];
             const spacing = (firstDie?.offsetWidth || 35) + 3;
             const cols = Math.ceil(Math.sqrt(diceIds.length));
@@ -1610,7 +1548,7 @@ export default class DevilsDice extends (GameGui as any) {
                 const dx = ((index % cols) - (cols - 1) / 2) * spacing;
                 const dy = (Math.floor(index / cols) - (rows - 1) / 2) * spacing;
                 element.classList.remove('placed');
-                element.classList.add('rolling');
+                element.classList.add('tumbling');
                 element.style.setProperty('--stack', '0');
                 element.style.left = `calc(50% + ${dx}px)`;
                 element.style.top = `calc(50% + ${dy}px)`;
@@ -1618,50 +1556,26 @@ export default class DevilsDice extends (GameGui as any) {
 
             const finalStacks = this.getPoolStackIndexes(convertedSatansPool);
 
-            // Animate through all faces
-            let currentFaceIndex = 0;
-            const animationInterval = setInterval(() => {
-                const currentFace = faces[currentFaceIndex];
-                if (!currentFace) return;
-
-                // Update all dice to show current face
+            // After one tumble, reveal the final faces and glide each die to its symbol's slot
+            setTimeout(() => {
                 for (const diceId in diceElements) {
                     const element = diceElements[diceId];
-                    if (element) {
-                        element.setAttribute('data-face', currentFace);
-                        element.innerHTML = this.getDiceSymbol(currentFace);
+                    const finalFace = convertedSatansPool[diceId];
+
+                    if (element && finalFace) {
+                        element.setAttribute('data-face', finalFace);
+                        element.innerHTML = this.getDiceSymbol(finalFace);
+                        element.classList.remove('tumbling');
+
+                        element.style.setProperty('--stack', String(finalStacks[diceId] ?? 0));
+                        element.style.left = '';
+                        element.style.top = '';
+                        element.classList.add('placed');
                     }
                 }
-
-                currentFaceIndex++;
-
-                // After cycling through all faces, show final results
-                if (currentFaceIndex >= faces.length) {
-                    clearInterval(animationInterval);
-
-                    // Show final faces after a brief delay
-                    setTimeout(() => {
-                        for (const diceId in diceElements) {
-                            const element = diceElements[diceId];
-                            const finalFace = convertedSatansPool[diceId];
-
-                            if (element && finalFace) {
-                                element.setAttribute('data-face', finalFace);
-                                element.innerHTML = this.getDiceSymbol(finalFace);
-                                element.classList.remove('rolling');
-
-                                // Release the gather position so the die glides to its symbol's slot
-                                element.style.setProperty('--stack', String(finalStacks[diceId] ?? 0));
-                                element.style.left = '';
-                                element.style.top = '';
-                                element.classList.add('placed');
-                            }
-                        }
-                        // Resolve once the slide into place (0.5s CSS transition) has finished
-                        setTimeout(resolve, 550);
-                    }, 100);
-                }
-            }, 100); // 100ms between each face
+                // Resolve once the glide (CSS transition) has finished
+                setTimeout(resolve, POOL_GLIDE_MS + 50);
+            }, DIE_TUMBLE_MS);
         });
     }
 
@@ -1860,6 +1774,7 @@ export default class DevilsDice extends (GameGui as any) {
     //// Confetti Animation
 
     private playConfettiAnimation(): void {
+        if (!this.animationsActive()) return;
         console.log('Playing confetti animation!');
 
         // Create confetti container

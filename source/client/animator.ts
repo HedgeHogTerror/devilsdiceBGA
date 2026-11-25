@@ -21,12 +21,23 @@ export interface TransferConfig {
     callback?: () => void; // Called after all animations complete
 }
 
+// Timings kept within BGA guidelines (~0.5s typical, 0.8s max per animation)
+export const DIE_MOVE_MS = 600;
+export const TOKEN_MOVE_MS = 500;
+export const DIE_TUMBLE_MS = 450; // must match the die-tumble keyframes duration in the SCSS
+
 export class GameObjectAnimator {
     private gameThemeUrl: string;
     private animationQueue: Promise<void> = Promise.resolve();
+    private isActive: () => boolean;
 
-    constructor(gameThemeUrl: string) {
+    /**
+     * @param isActive returns false when BGA wants no animations (fast replay, animations turned off,
+     *                 tab hidden) - every animation then completes instantly
+     */
+    constructor(gameThemeUrl: string, isActive: () => boolean = () => true) {
         this.gameThemeUrl = gameThemeUrl;
+        this.isActive = isActive;
     }
 
     /**
@@ -50,7 +61,12 @@ export class GameObjectAnimator {
      */
     async animateTransfer(config: TransferConfig): Promise<void> {
         const delay = config.delay ?? 100;
-        const duration = config.duration ?? 600;
+        const duration = config.duration ?? TOKEN_MOVE_MS;
+
+        if (!this.isActive()) {
+            config.callback?.();
+            return Promise.resolve();
+        }
 
         // Queue this animation to prevent overlapping animations
         this.animationQueue = this.animationQueue.then(async () => {
@@ -131,7 +147,7 @@ export class GameObjectAnimator {
                     setTimeout(() => {
                         document.body.removeChild(animatedObject);
                         resolve();
-                    }, 200);
+                    }, 150);
                 }, duration);
             });
         });
@@ -225,7 +241,7 @@ export class GameObjectAnimator {
             source: 'bank',
             target,
             count,
-            duration: 1000
+            duration: DIE_MOVE_MS
         });
     }
 
@@ -238,7 +254,7 @@ export class GameObjectAnimator {
             source,
             target: 'satans-pool',
             count,
-            duration: 1000
+            duration: DIE_MOVE_MS
         });
     }
 
@@ -258,9 +274,8 @@ export class GameObjectAnimator {
             count
         };
 
-        // Set dice duration to 1000ms
         if (type === 'die') {
-            config.duration = 1000;
+            config.duration = DIE_MOVE_MS;
         }
 
         return this.animateTransfer(config);
@@ -288,18 +303,21 @@ export class GameObjectAnimator {
             target,
             count,
             face,
-            duration: 1000
+            duration: DIE_MOVE_MS
         });
     }
 
     /**
-     * Animate dice reroll - cycles through all faces before showing final result
+     * Animate dice reroll - each die does one quick tumble with its face hidden, then reveals
+     * its final face (no rapid face flicker, per BGA accessibility guidelines)
      */
     async animateDiceReroll(
         containerId: string,
         finalDiceData: Record<string, string>,
         startDelay: number = 0
     ): Promise<void> {
+        const animate = this.isActive();
+
         return new Promise<void>((resolve) => {
             setTimeout(() => {
                 const container = document.getElementById(containerId);
@@ -309,78 +327,37 @@ export class GameObjectAnimator {
                     return;
                 }
 
-                const faces = ['flame', 'skull', 'trident', 'scythe', 'pentagram', 'imp'];
-                const diceElements: Record<string, HTMLElement> = {};
-
-                // Create initial dice elements
+                const tumbleClass = animate ? ' tumbling' : '';
                 let html = '';
                 for (const diceId in finalDiceData) {
-                    html += `<div class="die my-die rolling" data-face="flame" data-dice-id="${diceId}">
-                        ${this.getDiceSymbol('flame')}
+                    const finalFace = this.getFaceValue(finalDiceData[diceId]);
+                    html += `<div class="die my-die${tumbleClass}" data-face="${finalFace}" data-dice-id="${diceId}">
+                        ${this.getDiceSymbol(finalFace)}
                     </div>`;
                 }
                 container.innerHTML = html;
 
-                // Cache dice elements
-                const diceNodes = container.querySelectorAll('.die');
-                const diceIds = Object.keys(finalDiceData);
-                diceNodes.forEach((element, index) => {
-                    if (index < diceIds.length && diceIds[index]) {
-                        diceElements[diceIds[index]] = element as HTMLElement;
-                    }
-                });
+                if (!animate) {
+                    resolve();
+                    return;
+                }
 
-                // Animate through all faces
-                let currentFaceIndex = 0;
-                const animationInterval = setInterval(() => {
-                    const currentFace = faces[currentFaceIndex];
-                    if (!currentFace) return;
-
-                    // Update all dice to show current face
-                    for (const diceId in diceElements) {
-                        const element = diceElements[diceId];
-                        if (element) {
-                            element.setAttribute('data-face', currentFace);
-                            element.innerHTML = this.getDiceSymbol(currentFace);
-                        }
-                    }
-
-                    currentFaceIndex++;
-
-                    // After cycling through all faces, show final results
-                    if (currentFaceIndex >= faces.length) {
-                        clearInterval(animationInterval);
-
-                        // Show final faces after a brief delay
-                        setTimeout(() => {
-                            for (const diceId in diceElements) {
-                                const element = diceElements[diceId];
-                                const finalDiceValue = finalDiceData[diceId];
-
-                                if (!element || !finalDiceValue) continue;
-
-                                // Handle both string and object formats
-                                let finalFace: string;
-                                if (typeof finalDiceValue === 'string') {
-                                    finalFace = finalDiceValue;
-                                } else if (typeof finalDiceValue === 'object' && finalDiceValue !== null) {
-                                    finalFace = (finalDiceValue as any).face || (finalDiceValue as any).dice_face || (finalDiceValue as any).value || '';
-                                } else {
-                                    finalFace = '';
-                                }
-
-                                if (finalFace) {
-                                    element.setAttribute('data-face', finalFace);
-                                    element.innerHTML = this.getDiceSymbol(finalFace);
-                                    element.classList.remove('rolling');
-                                }
-                            }
-                            resolve();
-                        }, 100);
-                    }
-                }, 100); // 100ms between each face
-            }, startDelay);
+                setTimeout(() => {
+                    container.querySelectorAll('.die.tumbling').forEach((el) => el.classList.remove('tumbling'));
+                    resolve();
+                }, DIE_TUMBLE_MS);
+            }, animate ? startDelay : 0);
         });
+    }
+
+    /** Dice data may be a face string or a {face}/{dice_face}/{value} object */
+    private getFaceValue(value: unknown): string {
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object' && value !== null) {
+            const v = value as any;
+            return v.face || v.dice_face || v.value || '';
+        }
+        return '';
     }
 
     /**
@@ -399,7 +376,7 @@ export class GameObjectAnimator {
             source: config.source,
             target: config.target,
             count: config.count,
-            duration: 1000
+            duration: DIE_MOVE_MS
         });
 
         // Then, play reroll animation

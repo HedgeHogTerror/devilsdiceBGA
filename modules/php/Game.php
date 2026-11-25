@@ -241,6 +241,8 @@ class Game extends \Bga\GameFramework\Table {
             'action_name' => $actionLabel,
             'action_id' => $currentAction,
             'action_player_id' => $actionPlayerId,
+            // Players who still have to respond - lets the client restore response bubbles after a refresh
+            'waiting_player_ids' => array_map('intval', $this->gamestate->getActivePlayerList()),
             '_private' => []
         ];
 

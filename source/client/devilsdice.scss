@@ -1,4 +1,26 @@
+@use 'sass:list';
+
 /* Devil's Dice CSS - Coup-style circular layout */
+
+// Centers of the symbol circles on Satan's pool board art (Devils_Dice_board.jpg), as % of the board
+$pool-slots: (
+    imp: (49%, 15%),
+    flame: (12%, 41%),
+    trident: (86%, 41%),
+    pentagram: (49%, 54%),
+    skull: (26%, 85%),
+    scythe: (74%, 85%),
+);
+
+// Sets --slot-x / --slot-y from the element's data-face
+@mixin pool-slot-vars {
+    @each $face, $pos in $pool-slots {
+        &[data-face='#{$face}'] {
+            --slot-x: #{list.nth($pos, 1)};
+            --slot-y: #{list.nth($pos, 2)};
+        }
+    }
+}
 
 /* Main game wrapper */
 #game-wrap {
@@ -88,75 +110,6 @@
     align-items: center;
     transform: translate(-50%, -50%);
     z-index: 10;
-}
-
-// Raise the pool (and its dialog) above the placemats while the overflow picker is open
-.satans-pool-wrapper.overflow-open {
-    z-index: 1000;
-}
-
-/* Dice overflow face picker - gray speech-bubble dialog above Satan's pool */
-.overflow-dialog {
-    position: absolute;
-    bottom: calc(100% + 14px); // leave room for the arrow
-    left: 50%;
-    transform: translateX(-50%);
-    display: grid;
-    grid-template-columns: repeat(3, auto);
-    gap: 8px;
-    padding: 10px;
-    background: #6b6b6b;
-    border: 2px solid #4a4a4a;
-    border-radius: 10px;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
-    z-index: 1000;
-
-    // Pointed arrow at the bottom, pointing down at the pool
-    &::after,
-    &::before {
-        content: '';
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
-        border-style: solid;
-        border-color: transparent;
-    }
-    &::before {
-        top: 100%;
-        border-width: 14px 14px 0;
-        border-top-color: #4a4a4a; // outline
-    }
-    &::after {
-        top: calc(100% - 1px);
-        border-width: 12px 12px 0;
-        border-top-color: #6b6b6b; // fill
-    }
-
-    .overflow-face-btn {
-        padding: 0;
-        margin: 0;
-        border: none;
-        background: none;
-        cursor: pointer;
-        border-radius: 8px;
-        line-height: 0;
-
-        .die {
-            pointer-events: none;
-            transition: transform 0.1s, box-shadow 0.1s;
-        }
-
-        &:hover:not(:disabled) .die,
-        &:focus-visible .die {
-            transform: scale(1.1);
-            box-shadow: 0 0 0 3px #f39c12;
-        }
-
-        &:disabled {
-            cursor: default;
-            opacity: 0.6;
-        }
-    }
 }
 
 .satans-pool-title {
@@ -318,11 +271,6 @@
         line-height: 1;
     }
 
-    .hourglass {
-        display: inline-block;
-        animation: hourglass-spin 2s ease-in-out infinite;
-    }
-
     // Die face shown for a block, drawn like the player-mat dice but bubble-sized
     .die {
         width: 24px;
@@ -333,20 +281,6 @@
         &:hover {
             transform: none;
         }
-    }
-}
-
-@keyframes hourglass-spin {
-    0%,
-    40% {
-        transform: rotate(0deg);
-    }
-    50%,
-    90% {
-        transform: rotate(180deg);
-    }
-    100% {
-        transform: rotate(360deg);
     }
 }
 
@@ -640,15 +574,16 @@
     height: 35px;
     font-size: 16px;
 
-    // Positioned by its center (uses `translate` so `transform` stays free for shake/hover)
+    // Positioned by its center (uses `translate` so `transform` stays free for tumble/hover)
     position: absolute;
     left: 50%;
     top: 50%;
     translate: -50% -50%;
     z-index: calc(1 + var(--stack, 0));
+    // 0.4s glide - keep in sync with POOL_GLIDE_MS in devilsdice.ts
     transition:
-        left 0.5s ease-in-out,
-        top 0.5s ease-in-out,
+        left 0.4s ease-in-out,
+        top 0.4s ease-in-out,
         transform 0.1s;
 
     // Settled dice sit on their symbol's slot on the board.
@@ -656,30 +591,51 @@
     &.placed {
         left: calc(var(--slot-x) + var(--stack, 0) * 5px);
         top: calc(var(--slot-y) - var(--stack, 0) * 5px);
+        @include pool-slot-vars;
+    }
+}
 
-        &[data-face='imp'] {
-            --slot-x: 49%;
-            --slot-y: 15%;
+// Dim the pool dice while the overflow picker is open so the clickable circles stand out
+.overflow-open .pool-die {
+    opacity: 0.35;
+}
+
+/* Dice overflow picker - the six symbol circles on Satan's pool board become buttons */
+.overflow-picker {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+
+    .overflow-face-btn {
+        @include pool-slot-vars;
+        position: absolute;
+        left: var(--slot-x);
+        top: var(--slot-y);
+        translate: -50% -50%;
+        // At least the 40px tap target BGA recommends, even though the printed circles are smaller
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        margin: 0;
+        border: 3px solid #f39c12;
+        border-radius: 50%;
+        background: rgba(243, 156, 18, 0.2);
+        box-shadow: 0 0 8px rgba(243, 156, 18, 0.8);
+        cursor: pointer;
+        transition:
+            transform 0.1s,
+            background 0.1s;
+
+        &:hover:not(:disabled),
+        &:focus-visible {
+            transform: scale(1.12);
+            background: rgba(243, 156, 18, 0.45);
+            outline: none;
         }
-        &[data-face='flame'] {
-            --slot-x: 12%;
-            --slot-y: 41%;
-        }
-        &[data-face='trident'] {
-            --slot-x: 86%;
-            --slot-y: 41%;
-        }
-        &[data-face='pentagram'] {
-            --slot-x: 49%;
-            --slot-y: 54%;
-        }
-        &[data-face='skull'] {
-            --slot-x: 26%;
-            --slot-y: 85%;
-        }
-        &[data-face='scythe'] {
-            --slot-x: 74%;
-            --slot-y: 85%;
+
+        &:disabled {
+            cursor: default;
+            opacity: 0.5;
         }
     }
 }
@@ -940,36 +896,30 @@
 }
 
 /* Animations */
-@keyframes diceRoll {
+// Reroll: one quick tumble with the face hidden, then the final face is revealed.
+// (Replaces rapid face cycling - BGA guidelines advise against rapidly alternating visuals.)
+// Duration must match DIE_TUMBLE_MS in animator.ts
+.die.tumbling {
+    animation: die-tumble 0.45s ease-out;
+
+    .dice-icon {
+        opacity: 0;
+    }
+}
+
+.die .dice-icon {
+    transition: opacity 0.15s ease-out;
+}
+
+@keyframes die-tumble {
     0% {
         transform: rotate(0deg) scale(1);
     }
     50% {
-        transform: rotate(180deg) scale(1.2);
+        transform: rotate(180deg) scale(0.85);
     }
     100% {
         transform: rotate(360deg) scale(1);
-    }
-}
-
-.die.rolling {
-    animation: dice-shake 0.1s ease-in-out infinite;
-    transform-origin: center;
-}
-
-@keyframes dice-shake {
-    0%,
-    100% {
-        transform: rotate(-2deg) scale(1.02);
-    }
-    25% {
-        transform: rotate(2deg) scale(0.98);
-    }
-    50% {
-        transform: rotate(-1deg) scale(1.01);
-    }
-    75% {
-        transform: rotate(1deg) scale(0.99);
     }
 }
 

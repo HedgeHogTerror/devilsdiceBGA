@@ -15,11 +15,34 @@ class PlayerActions {
      * (drives the response bubble above their placemat). $response: 'pass' | 'challenge' | 'block'
      */
     private static function notifyPlayerResponded($game, $playerId, $response, $face = null) {
-        $game->notifyAllPlayers('playerResponded', '', [
+        $args = [
+            'player_name' => $game->getPlayerNameById($playerId),
             'playerId' => $playerId,
             'response' => $response,
             'face' => $face,
-        ]);
+        ];
+
+        switch ($response) {
+            case 'challenge':
+                $claimantId = intval($game->getGameStateValue('current_action_player'));
+                $args['target_name'] = $game->getPlayerNameById($claimantId);
+                $message = clienttranslate('${player_name} challenges ${target_name}');
+                break;
+            case 'block':
+                $faceNames = [
+                    DiceFaces::TRIDENT => clienttranslate('a trident'),
+                    DiceFaces::PENTAGRAM => clienttranslate('a pentagram'),
+                ];
+                $args['face_name'] = $faceNames[$face] ?? $face;
+                $args['i18n'] = ['face_name'];
+                $message = clienttranslate('${player_name} blocks by claiming ${face_name}');
+                break;
+            default:
+                $message = clienttranslate('${player_name} passes');
+                break;
+        }
+
+        $game->notifyAllPlayers('playerResponded', $message, $args);
     }
 
     /**
