@@ -90,6 +90,75 @@
     z-index: 10;
 }
 
+// Raise the pool (and its dialog) above the placemats while the overflow picker is open
+.satans-pool-wrapper.overflow-open {
+    z-index: 1000;
+}
+
+/* Dice overflow face picker - gray speech-bubble dialog above Satan's pool */
+.overflow-dialog {
+    position: absolute;
+    bottom: calc(100% + 14px); // leave room for the arrow
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: repeat(3, auto);
+    gap: 8px;
+    padding: 10px;
+    background: #6b6b6b;
+    border: 2px solid #4a4a4a;
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+    z-index: 1000;
+
+    // Pointed arrow at the bottom, pointing down at the pool
+    &::after,
+    &::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        border-style: solid;
+        border-color: transparent;
+    }
+    &::before {
+        top: 100%;
+        border-width: 14px 14px 0;
+        border-top-color: #4a4a4a; // outline
+    }
+    &::after {
+        top: calc(100% - 1px);
+        border-width: 12px 12px 0;
+        border-top-color: #6b6b6b; // fill
+    }
+
+    .overflow-face-btn {
+        padding: 0;
+        margin: 0;
+        border: none;
+        background: none;
+        cursor: pointer;
+        border-radius: 8px;
+        line-height: 0;
+
+        .die {
+            pointer-events: none;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        &:hover:not(:disabled) .die,
+        &:focus-visible .die {
+            transform: scale(1.1);
+            box-shadow: 0 0 0 3px #f39c12;
+        }
+
+        &:disabled {
+            cursor: default;
+            opacity: 0.6;
+        }
+    }
+}
+
 .satans-pool-title {
     font-weight: bold;
     color: #000000;
@@ -111,20 +180,17 @@
     align-items: center;
     justify-content: center;
     box-shadow: none;
+    position: relative;
 
+    // Pool dice are absolutely positioned over the board art (see .pool-die)
     #satans-pool-container {
-        width: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
+        position: absolute;
+        inset: 0;
     }
 
     #satans-pool {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 3px;
-        justify-content: center;
-        max-width: 180px;
+        position: absolute;
+        inset: 0;
     }
 }
 
@@ -198,7 +264,105 @@
 }
 
 /* Player placemat */
+/* Response bubble above a placemat during challenge/block windows (⏳ → 👍 / 🚫 / die face) */
+.response-bubble {
+    position: absolute;
+    bottom: calc(100% + 10px); // leave room for the arrow
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 34px;
+    height: 34px;
+    padding: 4px 8px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #6b6b6b;
+    border: 2px solid #4a4a4a;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    z-index: 50;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+    animation: bubble-pop 0.2s ease-out;
+    pointer-events: none;
+
+    // Pointed arrow at the bottom, pointing down at the player
+    &::before,
+    &::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        border-style: solid;
+        border-color: transparent;
+    }
+    &::before {
+        top: 100%;
+        border-width: 9px 9px 0;
+        border-top-color: #4a4a4a;
+    }
+    &::after {
+        top: calc(100% - 1px);
+        border-width: 7px 7px 0;
+        border-top-color: #6b6b6b;
+    }
+
+    &.fading {
+        opacity: 0;
+    }
+
+    .hourglass,
+    .response-icon {
+        font-size: 18px;
+        line-height: 1;
+    }
+
+    .hourglass {
+        display: inline-block;
+        animation: hourglass-spin 2s ease-in-out infinite;
+    }
+
+    // Die face shown for a block, drawn like the player-mat dice but bubble-sized
+    .die {
+        width: 24px;
+        height: 24px;
+        border-width: 2px;
+        cursor: default;
+
+        &:hover {
+            transform: none;
+        }
+    }
+}
+
+@keyframes hourglass-spin {
+    0%,
+    40% {
+        transform: rotate(0deg);
+    }
+    50%,
+    90% {
+        transform: rotate(180deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes bubble-pop {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.6);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+    }
+}
+
 .placemat {
+    position: relative; // anchor for .response-bubble
     background: transparent;
     border: none;
     border-radius: 8px;
@@ -475,6 +639,49 @@
     width: 35px;
     height: 35px;
     font-size: 16px;
+
+    // Positioned by its center (uses `translate` so `transform` stays free for shake/hover)
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    z-index: calc(1 + var(--stack, 0));
+    transition:
+        left 0.5s ease-in-out,
+        top 0.5s ease-in-out,
+        transform 0.1s;
+
+    // Settled dice sit on their symbol's slot on the board.
+    // --stack fans out multiple dice showing the same face.
+    &.placed {
+        left: calc(var(--slot-x) + var(--stack, 0) * 5px);
+        top: calc(var(--slot-y) - var(--stack, 0) * 5px);
+
+        &[data-face='imp'] {
+            --slot-x: 49%;
+            --slot-y: 15%;
+        }
+        &[data-face='flame'] {
+            --slot-x: 12%;
+            --slot-y: 41%;
+        }
+        &[data-face='trident'] {
+            --slot-x: 86%;
+            --slot-y: 41%;
+        }
+        &[data-face='pentagram'] {
+            --slot-x: 49%;
+            --slot-y: 54%;
+        }
+        &[data-face='skull'] {
+            --slot-x: 26%;
+            --slot-y: 85%;
+        }
+        &[data-face='scythe'] {
+            --slot-x: 74%;
+            --slot-y: 85%;
+        }
+    }
 }
 
 /* Challenge and block prompts can be shown via BGA messaging system */

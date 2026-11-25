@@ -11,6 +11,18 @@ namespace Bga\Games\DevilsDice;
  */
 class PlayerActions {
     /**
+     * Tell all clients how a player responded in a challenge/block window
+     * (drives the response bubble above their placemat). $response: 'pass' | 'challenge' | 'block'
+     */
+    private static function notifyPlayerResponded($game, $playerId, $response, $face = null) {
+        $game->notifyAllPlayers('playerResponded', '', [
+            'playerId' => $playerId,
+            'response' => $response,
+            'face' => $face,
+        ]);
+    }
+
+    /**
      * Check if player has at least one die (required for most actions)
      */
     private static function requireDice($game, $playerId) {
@@ -168,6 +180,8 @@ class PlayerActions {
         $game->checkAction('challenge');
         $challengerId = intval($game->getCurrentPlayerId());
 
+        self::notifyPlayerResponded($game, $challengerId, 'challenge');
+
         $game->setGameStateValue('challenge_player', $challengerId);
         $game->gamestate->nextState('resolveChallenge');
     }
@@ -187,6 +201,10 @@ class PlayerActions {
         if (!in_array($currentAction, [Actions::EXTORT, Actions::REAP_SOUL])) {
             throw new \BgaUserException("This action cannot be blocked");
         }
+
+        // Show the die face the blocker is claiming (Extort is blocked with a trident, Reap Soul with a pentagram)
+        $blockFace = $currentAction == Actions::EXTORT ? DiceFaces::TRIDENT : DiceFaces::PENTAGRAM;
+        self::notifyPlayerResponded($game, $blockerId, 'block', $blockFace);
 
         $game->debug("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         $game->debug("🛡️ BLOCK(): Player $blockerId is BLOCKING");
@@ -225,6 +243,10 @@ class PlayerActions {
         $stateId = isset($currentState['id']) ? $currentState['id'] : 'unknown';
         $stateName = isset($currentState['name']) ? $currentState['name'] : 'unknown';
         $game->debug("DevilsDice pass(): Player $playerId passing in state $stateId ($stateName)");
+
+        if ($stateName === 'challengeWindow' || $stateName === 'blockWindow') {
+            self::notifyPlayerResponded($game, $playerId, 'pass');
+        }
 
         // Player passes on challenge or block opportunity
         // $stateName already set above with safety check
